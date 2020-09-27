@@ -15,15 +15,16 @@ path = "src/bin.rs"
 [profile.release]
 codegen-units = 1
 debug = true
-lzo = true
+lto = true
 
 [dependencies]
 cortex-m = "0.6.3"
 cortex-m-rt = "0.6.3"
 panic-itm = "0.4.0"
+log = "0.4.11"
 
 [dependencies.cortex-m-log]
-features = ["itm"]
+features = ["itm", "semihosting", "log-integration"]
 version = "0.6.2"
 
 [dependencies.f3]

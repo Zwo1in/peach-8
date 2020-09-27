@@ -1,98 +1,203 @@
+//! Provides helper functions to create and initialize logging interfaces
+//! available through cortex_m_log crate.
+//!
+//! Available logging interfaces:
+//! - Semihosting STDOUT
+//! - Semihosting STDERR
+//! - Instrumentation Trace Macrocell
+//!
+//! Available critical section manip
+//! - InterruptFree: logging calls are executed in interrupt free context
+//! - InterruptOk: logging calls may be interrupted
+//!
+//! Provided loggers are available to `log` facade after calling unsafe init function
+//!
+//! # Examples
+//!
+//! ```no_run
+//! # use chip8_core::logger::*;
+//! let p = cortex_m::Peripherals::take().unwrap();
+//!
+//! let logger = create_itm_logger::<InterruptFree>(LevelFilter::max(), p.ITM);
+//! unsafe {
+//!     init(&logger);
+//! }
+//! ```
+
+use core::marker::{Send, Sync};
 use cortex_m::peripheral::ITM;
 use cortex_m_log::{
-    println,
-    printer::Itm,
+    log::{
+        trick_init,
+        Logger,
+    },
     destination,
-    modes::InterruptFree,
+    printer::{
+        Printer,
+        itm::ItmSync,
+        semihosting::{
+            Semihosting,
+            hio::{
+                HStdout,
+                HStderr,
+            },
+        },
+    },
+    modes::InterruptModer,
 };
 
-pub enum Severity {
-    Error,
-    Warn,
-    Info,
-    Debug,
-    Trace,
-}
+pub use log::LevelFilter;
+pub use cortex_m_log::modes::{InterruptFree, InterruptOk};
 
-impl Severity {
-    pub fn as_str(&self) -> &'static str {
-        match *self {
-            Severity::Error => "ERROR",
-            Severity::Warn  => "WARN",
-            Severity::Debug => "DEBUG",
-            Severity::Info  => "INFO",
-            Severity::Trace => "TRACE",
-        }
+/// Create new logger instance with ITM backend
+///
+/// Requires enabling ITM in openocd
+///
+/// # Examples
+///
+/// gdb:
+/// ```gdb
+/// monitor tpiu config internal itm.out uart off 8000000
+/// monitor itm port 0 on
+/// ```
+///
+/// shell:
+/// ```sh
+/// itmdump -F -f itm.out
+/// ```
+///
+/// ```no_run
+/// use chip8_core::logger::{
+///     create_itm_logger,
+///     InterruptFree,
+///     LevelFilter,
+///     init,
+/// };
+///
+/// use log::info;
+///
+/// let p = cortex_m::Peripherals::take().unwrap();
+/// let logger = create_itm_logger::<InterruptFree>(LevelFilter::max(), p.ITM);
+/// unsafe { init(&logger); }
+///
+/// info!("Hello world");
+/// ```
+pub fn create_itm_logger<M>(level: LevelFilter, itm_reg: ITM) -> Logger<ItmSync<M>>
+where
+    M: InterruptModer + Send + Sync + 'static
+{
+    Logger {
+        level,
+        inner: ItmSync::<M>::new(destination::Itm::new(itm_reg)),
     }
 }
 
-
-pub struct Logger {
-    itm: Itm<InterruptFree>,
-}
-
-impl Logger {
-    pub fn new(itm: ITM) -> Self {
-        let itm = Itm::new(destination::Itm::new(itm));
-        Self { itm }
-    }
-
-    pub fn log(&mut self, sev: Severity, modpath: &str, what: core::fmt::Arguments) {
-        println!(self.itm, "[{:5}][{}] {}", sev.as_str(), modpath, what);
-    }
-
-    pub fn error(&mut self, modpath: &str, what: core::fmt::Arguments) {
-        self.log(Severity::Error, modpath, what);
-    }
-
-    pub fn warn(&mut self, modpath: &str, what: core::fmt::Arguments) {
-        self.log(Severity::Warn, modpath, what);
-    }
-
-    pub fn info(&mut self, modpath: &str, what: core::fmt::Arguments) {
-        self.log(Severity::Info, modpath, what);
-    }
-
-    pub fn debug(&mut self, modpath: &str, what: core::fmt::Arguments) {
-        self.log(Severity::Debug, modpath, what);
-    }
-
-    pub fn trace(&mut self, modpath: &str, what: core::fmt::Arguments) {
-        self.log(Severity::Trace, modpath, what);
-    }
-}
-
-#[macro_export]
-macro_rules! error {
-    ($logger:ident, $($args:tt),+) => {
-        $logger.borrow_mut().error(module_path!(), format_args!($($args),+)); 
+/// Create new logger instance with semihosting backend writing to host's stdout
+///
+/// Requires enabling semihosting in openocd
+///
+/// # Examples
+///
+/// gdb:
+/// ```gdb
+/// monitor arm semihosting enable
+/// ```
+///
+/// ```no_run
+/// use chip8_core::logger::{
+///     create_shout_logger,
+///     InterruptFree,
+///     LevelFilter,
+///     init,
+/// };
+///
+/// use log::info;
+///
+/// let logger = create_shout_logger::<InterruptFree>(LevelFilter::max());
+/// unsafe { init(&logger); }
+///
+/// info!("Hello world");
+/// ```
+pub fn create_shout_logger<M>(level: LevelFilter) -> Logger<Semihosting<M, HStdout>>
+where
+    M: InterruptModer + Send + Sync + 'static
+{
+    Logger {
+        level,
+        inner: Semihosting::<M, _>::stdout()
+            .expect("Failed to retreive semihosting stdout"),
     }
 }
 
-#[macro_export]
-macro_rules! warn {
-    ($logger:ident, $($args:tt),+) => {
-        $logger.borrow_mut().warn(module_path!(), format_args!($($args),+)); 
+/// Create new logger instance with semihosting backend writing to host's stderr
+///
+/// Requires enabling semihosting in openocd ['create_shout_logger']
+///
+/// # Examples
+///
+/// gdb:
+/// ```gdb
+/// monitor arm semihosting enable
+/// ```
+///
+/// ```no_run
+/// use chip8_core::logger::{
+///     create_sherr_logger,
+///     InterruptFree,
+///     LevelFilter,
+///     init,
+/// };
+///
+/// use log::info;
+///
+/// let logger = create_sherr_logger::<InterruptFree>(LevelFilter::max());
+/// unsafe { init(&logger); }
+///
+/// info!("Hello world");
+/// ```
+pub fn create_sherr_logger<M>(level: LevelFilter) -> Logger<Semihosting<M, HStderr>>
+where
+    M: InterruptModer + Send + Sync + 'static
+{
+    Logger {
+        level,
+        inner: Semihosting::<M, _>::stderr()
+            .expect("Failed to retreive semihosting stderr"),
     }
 }
 
-#[macro_export]
-macro_rules! info {
-    ($logger:ident, $($args:tt),+) => {
-        $logger.borrow_mut().info(module_path!(), format_args!($($args),+)); 
-    }
-}
-
-#[macro_export]
-macro_rules! debug {
-    ($logger:ident, $($args:tt),+) => {
-        $logger.borrow_mut().debug(module_path!(), format_args!($($args),+)); 
-    }
-}
-
-#[macro_export]
-macro_rules! trace {
-    ($logger:ident, $($args:tt),+) => {
-        $logger.borrow_mut().trace(module_path!(), format_args!($($args),+)); 
-    }
+/// Initialize logger for the log facade.
+///
+/// # Safety
+///
+/// This function should only be called once
+///
+/// This function mutates lifetime of a logger, tricking compiler that it's lifetime is static
+///
+/// # Undefined Behaviour
+///
+/// It is UB to drop logger instance and try to use logging API afterwards.
+/// It's user's responsibility to keep an instance valid
+///
+/// This definitely won't print anything, and no prints are the best scenario in this case:
+/// ```no_run
+/// # use chip8_core::logger::{
+/// #     create_sherr_logger,
+/// #     InterruptFree,
+/// #     LevelFilter,
+/// #     init,
+/// # };
+/// # use log::info;
+/// {
+///     let logger = create_sherr_logger::<InterruptFree>(LevelFilter::max());
+///     unsafe { init(&logger); }
+/// }
+///
+/// info!("Hello world");
+/// ```
+pub unsafe fn init<P>(logger: &Logger<P>)
+where
+    P: Printer + Send + Sync + 'static
+{
+    trick_init(logger).expect("Failed to initialize logger");
 }
