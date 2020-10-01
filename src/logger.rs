@@ -47,7 +47,11 @@ use cortex_m_log::{
 };
 
 pub use log::LevelFilter;
-pub use cortex_m_log::modes::{InterruptFree, InterruptOk};
+
+pub use cortex_m_log::modes::{
+    InterruptFree,
+    InterruptOk,
+};
 
 /// Create new logger instance with ITM backend
 ///
