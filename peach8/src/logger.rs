@@ -15,7 +15,7 @@
 //! # Examples
 //!
 //! ```no_run
-//! # use chip8_core::logger::*;
+//! # use peach8::logger::*;
 //! let p = cortex_m::Peripherals::take().unwrap();
 //!
 //! let logger = create_itm_logger::<InterruptFree>(LevelFilter::max(), p.ITM);
@@ -71,7 +71,7 @@ pub use cortex_m_log::modes::{
 /// ```
 ///
 /// ```no_run
-/// use chip8_core::logger::{
+/// use peach8::logger::{
 ///     create_itm_logger,
 ///     InterruptFree,
 ///     LevelFilter,
@@ -108,7 +108,7 @@ where
 /// ```
 ///
 /// ```no_run
-/// use chip8_core::logger::{
+/// use peach8::logger::{
 ///     create_shout_logger,
 ///     InterruptFree,
 ///     LevelFilter,
@@ -145,7 +145,7 @@ where
 /// ```
 ///
 /// ```no_run
-/// use chip8_core::logger::{
+/// use peach8::logger::{
 ///     create_sherr_logger,
 ///     InterruptFree,
 ///     LevelFilter,
@@ -185,7 +185,7 @@ where
 ///
 /// This definitely won't print anything, and no prints are the best scenario in this case:
 /// ```no_run
-/// # use chip8_core::logger::{
+/// # use peach8::logger::{
 /// #     create_sherr_logger,
 /// #     InterruptFree,
 /// #     LevelFilter,

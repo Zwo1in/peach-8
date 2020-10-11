@@ -1,36 +1,10 @@
-[package]
-name = "chip8"
-version = "0.1.0"
-authors = ["Zwo1in <zwolin13@gmail.com>"]
-edition = "2018"
-
-[lib]
-name = "chip8_core"
-path = "src/lib.rs"
-
-[[bin]]
-name = "chip8"
-path = "src/bin.rs"
+[workspace]
+members = [
+    "peach8",
+    "chip",
+]
 
 [profile.release]
 codegen-units = 1
 debug = true
 lto = true
-
-[dependencies]
-cortex-m = "0.6.3"
-cortex-m-rt = "0.6.3"
-panic-itm = "0.4.0"
-log = "0.4.11"
-
-[dependencies.cortex-m-log]
-features = ["itm", "semihosting", "log-integration"]
-version = "0.6.2"
-
-[dependencies.f3]
-features = ["rt"]
-version = "0.6.1"
-
-[dependencies.lazy_static]
-features = ["spin_no_std"]
-version = "1.4.0"

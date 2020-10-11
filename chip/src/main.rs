@@ -12,7 +12,7 @@ use cortex_m_rt::entry;
 use f3::hal::stm32f30x::{self, gpioc, rcc, tim6};
 
 use log::{info, trace, error};
-use chip8_core::logger::*;
+use peach8::logger::*;
 
 #[inline(never)]
 fn delay(tim6: &tim6::RegisterBlock, ms: u16) {

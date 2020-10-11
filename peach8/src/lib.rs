@@ -2,6 +2,7 @@
 
 pub mod logger;
 pub mod keeb;
+pub mod spu;
 
 #[test]
 fn it_works() {
