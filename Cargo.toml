@@ -1,7 +1,8 @@
 [workspace]
 members = [
-    "peach8",
     "chip",
+    "peach8",
+    "peripherals",
 ]
 
 [profile.release]
