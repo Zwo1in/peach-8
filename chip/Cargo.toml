@@ -4,10 +4,8 @@ version = "0.1.0"
 authors = ["Zwo1in <zwolin13@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-peach8 = { path = "../peach8" }
+peripherals = { path = "../peripherals" }
 cortex-m = "0.6.3"
 cortex-m-rt = "0.6.3"
 panic-itm = "0.4.0"
@@ -17,9 +15,9 @@ log = "0.4.11"
 features = ["itm", "semihosting", "log-integration"]
 version = "0.6.2"
 
-[dependencies.f3]
-features = ["rt"]
-version = "0.6.1"
+[dependencies.stm32f3xx-hal]
+features = ["stm32f303xc"]
+version = "0.5.0"
 
 [dependencies.lazy_static]
 features = ["spin_no_std"]
