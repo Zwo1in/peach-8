@@ -27,31 +27,22 @@
 use core::marker::{Send, Sync};
 use cortex_m::peripheral::ITM;
 use cortex_m_log::{
-    log::{
-        trick_init,
-        Logger,
-    },
     destination,
+    log::{trick_init, Logger},
+    modes::InterruptModer,
     printer::{
-        Printer,
         itm::ItmSync,
         semihosting::{
+            hio::{HStderr, HStdout},
             Semihosting,
-            hio::{
-                HStdout,
-                HStderr,
-            },
         },
+        Printer,
     },
-    modes::InterruptModer,
 };
 
 pub use log::LevelFilter;
 
-pub use cortex_m_log::modes::{
-    InterruptFree,
-    InterruptOk,
-};
+pub use cortex_m_log::modes::{InterruptFree, InterruptOk};
 
 /// Create new logger instance with ITM backend
 ///
@@ -88,7 +79,7 @@ pub use cortex_m_log::modes::{
 /// ```
 pub fn create_itm_logger<M>(level: LevelFilter, itm_reg: ITM) -> Logger<ItmSync<M>>
 where
-    M: InterruptModer + Send + Sync + 'static
+    M: InterruptModer + Send + Sync + 'static,
 {
     Logger {
         level,
@@ -124,12 +115,11 @@ where
 /// ```
 pub fn create_shout_logger<M>(level: LevelFilter) -> Logger<Semihosting<M, HStdout>>
 where
-    M: InterruptModer + Send + Sync + 'static
+    M: InterruptModer + Send + Sync + 'static,
 {
     Logger {
         level,
-        inner: Semihosting::<M, _>::stdout()
-            .expect("Failed to retreive semihosting stdout"),
+        inner: Semihosting::<M, _>::stdout().expect("Failed to retreive semihosting stdout"),
     }
 }
 
@@ -161,12 +151,11 @@ where
 /// ```
 pub fn create_sherr_logger<M>(level: LevelFilter) -> Logger<Semihosting<M, HStderr>>
 where
-    M: InterruptModer + Send + Sync + 'static
+    M: InterruptModer + Send + Sync + 'static,
 {
     Logger {
         level,
-        inner: Semihosting::<M, _>::stderr()
-            .expect("Failed to retreive semihosting stderr"),
+        inner: Semihosting::<M, _>::stderr().expect("Failed to retreive semihosting stderr"),
     }
 }
 
@@ -201,7 +190,7 @@ where
 /// ```
 pub unsafe fn init<P>(logger: &Logger<P>)
 where
-    P: Printer + Send + Sync + 'static
+    P: Printer + Send + Sync + 'static,
 {
     trick_init(logger).expect("Failed to initialize logger");
 }
