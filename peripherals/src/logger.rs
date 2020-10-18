@@ -16,12 +16,19 @@
 //!
 //! ```no_run
 //! # use peripherals::logger::*;
+//! # use log::{info, debug};
+//! #
+//! # let r0 = 15;
+//! #
 //! let p = cortex_m::Peripherals::take().unwrap();
 //!
 //! let logger = create_itm_logger::<InterruptFree>(LevelFilter::max(), p.ITM);
 //! unsafe {
 //!     init(&logger);
 //! }
+//!
+//! info!("Shutdown procedure started");
+//! debug!("Value of r0: {}", r0);
 //! ```
 
 use core::marker::{Send, Sync};

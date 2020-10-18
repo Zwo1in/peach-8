@@ -1,6 +1,6 @@
 /// An enum representing 36 possible opcodes of chip-8 architecture
 ///
-/// Based on http://mattmik.com/files/chip8/mastering/chip8.html
+/// Based on [chip8 mastering](http://mattmik.com/files/chip8/mastering/chip8.html)
 ///
 /// Examples:
 /// ```
@@ -17,159 +17,75 @@
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum OpCode {
     /// Execute machine language subroutine at address NNN
-    _0NNN {
-        nnn: u16,
-    },
+    _0NNN { nnn: u16 },
     /// Clear the screen
     _00E0,
     /// Return from a subroutine
     _00EE,
     /// Jump to address NNN
-    _1NNN {
-        nnn: u16,
-    },
+    _1NNN { nnn: u16 },
     /// Execute subroutine starting at address NNN
-    _2NNN {
-        nnn: u16,
-    },
+    _2NNN { nnn: u16 },
     /// Skip the following instruction if the value of register VX equals NN
-    _3XNN {
-        x: u8,
-        nn: u8,
-    },
+    _3XNN { x: u8, nn: u8 },
     /// Skip the following instruction if the value of register VX is not equal to NN
-    _4XNN {
-        x: u8,
-        nn: u8,
-    },
+    _4XNN { x: u8, nn: u8 },
     /// Skip the following instruction if the value of register VX is equal to the value of register VY
-    _5XY0 {
-        x: u8,
-        y: u8,
-    },
+    _5XY0 { x: u8, y: u8 },
     /// Store number NN in register VX
-    _6XNN {
-        x: u8,
-        nn: u8,
-    },
+    _6XNN { x: u8, nn: u8 },
     /// Add the value NN to register VX
-    _7XNN {
-        x: u8,
-        nn: u8,
-    },
+    _7XNN { x: u8, nn: u8 },
     /// Store the value of register VY in register VX
-    _8XY0 {
-        x: u8,
-        y: u8,
-    },
+    _8XY0 { x: u8, y: u8 },
     /// Set VX to VX OR VY
-    _8XY1 {
-        x: u8,
-        y: u8,
-    },
+    _8XY1 { x: u8, y: u8 },
     /// Set VX to VX AND VY
-    _8XY2 {
-        x: u8,
-        y: u8,
-    },
+    _8XY2 { x: u8, y: u8 },
     /// Set VX to VX XOR VY
-    _8XY3 {
-        x: u8,
-        y: u8,
-    },
+    _8XY3 { x: u8, y: u8 },
     /// Add the value of register VY to register VX, Set VF to 01 if a carry occurs, Set VF to 00 if a carry does not occur
-    _8XY4 {
-        x: u8,
-        y: u8,
-    },
+    _8XY4 { x: u8, y: u8 },
     /// Subtract the value of register VY from register VX, Set VF to 00 if a borrow occurs, Set VF to 01 if a borrow does not occur
-    _8XY5 {
-        x: u8,
-        y: u8,
-    },
+    _8XY5 { x: u8, y: u8 },
     /// Store the value of register VY shifted right one bit in register VX, Set register VF to the least significant bit prior to the shift
-    _8XY6 {
-        x: u8,
-        y: u8,
-    },
+    _8XY6 { x: u8, y: u8 },
     /// Set register VX to the value of VY minus VX, Set VF to 00 if a borrow occurs, Set VF to 01 if a borrow does not occur
-    _8XY7 {
-        x: u8,
-        y: u8,
-    },
+    _8XY7 { x: u8, y: u8 },
     /// Store the value of register VY shifted left one bit in register VX, Set register VF to the most significant bit prior to the shift
-    _8XYE {
-        x: u8,
-        y: u8,
-    },
+    _8XYE { x: u8, y: u8 },
     /// Skip the following instruction if the value of register VX is not equal to the value of register VY
-    _9XY0 {
-        x: u8,
-        y: u8,
-    },
+    _9XY0 { x: u8, y: u8 },
     /// Store memory address NNN in register I
-    _ANNN {
-        nnn: u16,
-    },
+    _ANNN { nnn: u16 },
     /// Jump to address NNN + V0
-    _BNNN {
-        nnn: u16,
-    },
+    _BNNN { nnn: u16 },
     /// Set VX to a random number with a mask of NN
-    _CXNN {
-        x: u8,
-        nn: u8,
-    },
+    _CXNN { x: u8, nn: u8 },
     /// Draw a sprite at position VX, VY with N bytes of sprite data starting at the address stored in I, Set VF to 01 if any set pixels are changed to unset, and 00 otherwise
-    _DXYN {
-        x: u8,
-        y: u8,
-        n: u8,
-    },
+    _DXYN { x: u8, y: u8, n: u8 },
     /// Skip the following instruction if the key corresponding to the hex value currently stored in register VX is pressed
-    _EX9E {
-        x: u8,
-    },
+    _EX9E { x: u8 },
     /// Skip the following instruction if the key corresponding to the hex value currently stored in register VX is not pressed
-    _EXA1 {
-        x: u8,
-    },
+    _EXA1 { x: u8 },
     /// Store the current value of the delay timer in register VX
-    _FX07 {
-        x: u8,
-    },
+    _FX07 { x: u8 },
     /// Wait for a keypress and store the result in register VX
-    _FX0A {
-        x: u8,
-    },
+    _FX0A { x: u8 },
     /// Set the delay timer to the value of register VX
-    _FX15 {
-        x: u8,
-    },
+    _FX15 { x: u8 },
     /// Set the sound timer to the value of register VX
-    _FX18 {
-        x: u8,
-    },
+    _FX18 { x: u8 },
     /// Add the value stored in register VX to register I
-    _FX1E {
-        x: u8,
-    },
+    _FX1E { x: u8 },
     /// Set I to the memory address of the sprite data corresponding to the hexadecimal digit stored in register VX
-    _FX29 {
-        x: u8,
-    },
+    _FX29 { x: u8 },
     /// Store the binary-coded decimal equivalent of the value stored in register VX at addresses I, I+1, and I+2
-    _FX33 {
-        x: u8,
-    },
+    _FX33 { x: u8 },
     /// Store the values of registers V0 to VX inclusive in memory starting at address I, I is set to I + X + 1 after operation
-    _FX55 {
-        x: u8,
-    },
+    _FX55 { x: u8 },
     /// Fill registers V0 to VX inclusive with the values stored in memory starting at address I, I is set to I + X + 1 after operation
-    _FX65 {
-        x: u8,
-    },
+    _FX65 { x: u8 },
 }
 
 impl OpCode {
@@ -202,15 +118,13 @@ impl OpCode {
             0x0u8 => match Self::read_nnn(raw) {
                 0x0E0u16 => OpCode::_00E0,
                 0x0EEu16 => OpCode::_00EE,
-                nnn => OpCode::_0NNN {
-                    nnn
-                },
+                nnn => OpCode::_0NNN { nnn },
             },
             0x1u8 => OpCode::_1NNN {
-                nnn: Self::read_nnn(raw)
+                nnn: Self::read_nnn(raw),
             },
             0x2u8 => OpCode::_2NNN {
-                nnn: Self::read_nnn(raw)
+                nnn: Self::read_nnn(raw),
             },
             0x3u8 => OpCode::_3XNN {
                 x: Self::read_x(raw),
@@ -247,16 +161,16 @@ impl OpCode {
                     0xEu8 => OpCode::_8XYE { x, y },
                     _ => panic!("Unknown operation code"),
                 }
-            },
+            }
             0x9u8 => OpCode::_9XY0 {
                 x: Self::read_x(raw),
                 y: Self::read_y(raw),
             },
             0xAu8 => OpCode::_ANNN {
-                nnn: Self::read_nnn(raw)
+                nnn: Self::read_nnn(raw),
             },
             0xBu8 => OpCode::_BNNN {
-                nnn: Self::read_nnn(raw)
+                nnn: Self::read_nnn(raw),
             },
             0xCu8 => OpCode::_CXNN {
                 x: Self::read_x(raw),
@@ -274,7 +188,7 @@ impl OpCode {
                     0xA1u8 => OpCode::_EXA1 { x },
                     _ => panic!("Unknown operation code"),
                 }
-            },
+            }
             0xFu8 => {
                 let x = Self::read_x(raw);
                 match Self::read_nn(raw) {
@@ -289,7 +203,7 @@ impl OpCode {
                     0x65u8 => OpCode::_FX65 { x },
                     _ => panic!("Unknown operation code"),
                 }
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -330,6 +244,7 @@ mod tests {
     }
 
     #[test]
+    #[rustfmt::skip]
     fn should_read_all_opcodes() {
         use super::OpCode::*;
         let instructions = [
