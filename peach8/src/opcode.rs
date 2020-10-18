@@ -1,3 +1,8 @@
+use core::convert::TryFrom;
+
+#[allow(unused_imports)]
+use log::{error, warn, info, debug, trace};
+
 /// An enum representing 36 possible opcodes of chip-8 architecture
 ///
 /// Based on [chip8 mastering](http://mattmik.com/files/chip8/mastering/chip8.html)
@@ -112,9 +117,13 @@ impl OpCode {
     fn read_nnn(raw: u16) -> u16 {
         raw & 0x0FFFu16
     }
+}
 
-    pub fn from(raw: u16) -> Self {
-        match Self::read_first(raw) {
+impl TryFrom<u16> for OpCode {
+    type Error = &'static str;
+
+    fn try_from(raw: u16) -> Result<Self, Self::Error> {
+        Ok(match Self::read_first(raw) {
             0x0u8 => match Self::read_nnn(raw) {
                 0x0E0u16 => OpCode::_00E0,
                 0x0EEu16 => OpCode::_00EE,
@@ -134,9 +143,13 @@ impl OpCode {
                 x: Self::read_x(raw),
                 nn: Self::read_nn(raw),
             },
-            0x5u8 => OpCode::_5XY0 {
-                x: Self::read_x(raw),
-                y: Self::read_y(raw),
+            0x5u8 => if Self::read_last(raw) == 0u8 {
+                OpCode::_5XY0 {
+                    x: Self::read_x(raw),
+                    y: Self::read_y(raw),
+                }
+            } else {
+                return Err("Unknown operation code");
             },
             0x6u8 => OpCode::_6XNN {
                 x: Self::read_x(raw),
@@ -159,12 +172,16 @@ impl OpCode {
                     0x6u8 => OpCode::_8XY6 { x, y },
                     0x7u8 => OpCode::_8XY7 { x, y },
                     0xEu8 => OpCode::_8XYE { x, y },
-                    _ => panic!("Unknown operation code"),
+                    _ => return Err("Unknown operation code"),
                 }
             }
-            0x9u8 => OpCode::_9XY0 {
-                x: Self::read_x(raw),
-                y: Self::read_y(raw),
+            0x9u8 => if Self::read_last(raw) == 0u8 {
+                OpCode::_9XY0 {
+                    x: Self::read_x(raw),
+                    y: Self::read_y(raw),
+                }
+            } else {
+                return Err("Unknown operation code");
             },
             0xAu8 => OpCode::_ANNN {
                 nnn: Self::read_nnn(raw),
@@ -186,7 +203,7 @@ impl OpCode {
                 match Self::read_nn(raw) {
                     0x9Eu8 => OpCode::_EX9E { x },
                     0xA1u8 => OpCode::_EXA1 { x },
-                    _ => panic!("Unknown operation code"),
+                    _ => return Err("Unknown operation code"),
                 }
             }
             0xFu8 => {
@@ -201,11 +218,11 @@ impl OpCode {
                     0x33u8 => OpCode::_FX33 { x },
                     0x55u8 => OpCode::_FX55 { x },
                     0x65u8 => OpCode::_FX65 { x },
-                    _ => panic!("Unknown operation code"),
+                    _ => return Err("Unknown operation code"),
                 }
             }
             _ => unreachable!(),
-        }
+        })
     }
 }
 
@@ -243,52 +260,81 @@ mod tests {
         assert_eq!(0xEEFu16, OpCode::read_nnn(0xBEEFu16));
     }
 
+    /// OpCode may only be invalid in case where the last byte have 
+    /// [partially] predefined value. First byte is always valid, as
+    /// whole 4 most significant bits range is used in opcodes, and the
+    /// latter 4 bits are placeholders for value in each opcode
+    ///
+    /// Example of OpCode that may be invalid:
+    ///     9AB1 (close match for OpCode::_9XY0)
+    ///     ---^
+    #[test]
+    fn should_catch_invalid_opcodes() {
+        let invalid_opcodes = [
+            0x5321u16, // 5XYn
+            0x843Fu16, // 8XYn
+            0x8AC9u16, // 8XYn
+            0x9134u16, // 9XYn
+            0xE14Eu16, // EXnn
+            0xE392u16, // EXnn
+            0xE2B1u16, // EXnn
+            0xE5A2u16, // EXnn
+            0xF317u16, // FXnn
+            0xF302u16, // FXnn
+            0xF328u16, // FXnn
+            0xF322u16, // FXnn
+            0xF381u16, // FXnn
+        ];
+        for &raw in &invalid_opcodes {
+            assert!(OpCode::try_from(raw).is_err());
+        }
+    }
+
     #[test]
     #[rustfmt::skip]
     fn should_read_all_opcodes() {
-        use super::OpCode::*;
-        let instructions = [
-            (0x0ABCu16, _0NNN { nnn: 0x0ABCu16 }),
-            (0x00E0u16, _00E0),
-            (0x00EEu16, _00EE),
-            (0x1ABCu16, _1NNN { nnn: 0x0ABCu16 }),
-            (0x2ABCu16, _2NNN { nnn: 0x0ABCu16 }),
-            (0x3ABCu16, _3XNN { x: 0xAu8, nn: 0xBCu8 }),
-            (0x4ABCu16, _4XNN { x: 0xAu8, nn: 0xBCu8 }),
-            (0x5AB0u16, _5XY0 { x: 0xAu8, y: 0xBu8 }),
-            (0x6ABCu16, _6XNN { x: 0xAu8, nn: 0xBCu8 }),
-            (0x7ABCu16, _7XNN { x: 0xAu8, nn: 0xBCu8 }),
-            (0x8AB0u16, _8XY0 { x: 0xAu8, y: 0xBu8 }),
-            (0x8AB1u16, _8XY1 { x: 0xAu8, y: 0xBu8 }),
-            (0x8AB2u16, _8XY2 { x: 0xAu8, y: 0xBu8 }),
-            (0x8AB3u16, _8XY3 { x: 0xAu8, y: 0xBu8 }),
-            (0x8AB4u16, _8XY4 { x: 0xAu8, y: 0xBu8 }),
-            (0x8AB5u16, _8XY5 { x: 0xAu8, y: 0xBu8 }),
-            (0x8AB6u16, _8XY6 { x: 0xAu8, y: 0xBu8 }),
-            (0x8AB7u16, _8XY7 { x: 0xAu8, y: 0xBu8 }),
-            (0x8ABEu16, _8XYE { x: 0xAu8, y: 0xBu8 }),
-            (0x9AB0u16, _9XY0 { x: 0xAu8, y: 0xBu8 }),
-            (0xAABCu16, _ANNN { nnn: 0x0ABCu16 }),
-            (0xBABCu16, _BNNN { nnn: 0x0ABCu16 }),
-            (0xCABCu16, _CXNN { x: 0xAu8, nn: 0xBCu8 }),
-            (0xDABCu16, _DXYN { x: 0xAu8, y: 0xBu8, n: 0xCu8 }),
-            (0xEA9Eu16, _EX9E { x: 0xAu8 }),
-            (0xEAA1u16, _EXA1 { x: 0xAu8 }),
-            (0xFA07u16, _FX07 { x: 0xAu8 }),
-            (0xFA0Au16, _FX0A { x: 0xAu8 }),
-            (0xFA15u16, _FX15 { x: 0xAu8 }),
-            (0xFA18u16, _FX18 { x: 0xAu8 }),
-            (0xFA1Eu16, _FX1E { x: 0xAu8 }),
-            (0xFA29u16, _FX29 { x: 0xAu8 }),
-            (0xFA33u16, _FX33 { x: 0xAu8 }),
-            (0xFA55u16, _FX55 { x: 0xAu8 }),
-            (0xFA65u16, _FX65 { x: 0xAu8 }),
+        let labeled_data = [
+            (0x0ABCu16, OpCode::_0NNN { nnn: 0x0ABCu16 }),
+            (0x00E0u16, OpCode::_00E0),
+            (0x00EEu16, OpCode::_00EE),
+            (0x1ABCu16, OpCode::_1NNN { nnn: 0x0ABCu16 }),
+            (0x2ABCu16, OpCode::_2NNN { nnn: 0x0ABCu16 }),
+            (0x3ABCu16, OpCode::_3XNN { x: 0xAu8, nn: 0xBCu8 }),
+            (0x4ABCu16, OpCode::_4XNN { x: 0xAu8, nn: 0xBCu8 }),
+            (0x5AB0u16, OpCode::_5XY0 { x: 0xAu8, y: 0xBu8 }),
+            (0x6ABCu16, OpCode::_6XNN { x: 0xAu8, nn: 0xBCu8 }),
+            (0x7ABCu16, OpCode::_7XNN { x: 0xAu8, nn: 0xBCu8 }),
+            (0x8AB0u16, OpCode::_8XY0 { x: 0xAu8, y: 0xBu8 }),
+            (0x8AB1u16, OpCode::_8XY1 { x: 0xAu8, y: 0xBu8 }),
+            (0x8AB2u16, OpCode::_8XY2 { x: 0xAu8, y: 0xBu8 }),
+            (0x8AB3u16, OpCode::_8XY3 { x: 0xAu8, y: 0xBu8 }),
+            (0x8AB4u16, OpCode::_8XY4 { x: 0xAu8, y: 0xBu8 }),
+            (0x8AB5u16, OpCode::_8XY5 { x: 0xAu8, y: 0xBu8 }),
+            (0x8AB6u16, OpCode::_8XY6 { x: 0xAu8, y: 0xBu8 }),
+            (0x8AB7u16, OpCode::_8XY7 { x: 0xAu8, y: 0xBu8 }),
+            (0x8ABEu16, OpCode::_8XYE { x: 0xAu8, y: 0xBu8 }),
+            (0x9AB0u16, OpCode::_9XY0 { x: 0xAu8, y: 0xBu8 }),
+            (0xAABCu16, OpCode::_ANNN { nnn: 0x0ABCu16 }),
+            (0xBABCu16, OpCode::_BNNN { nnn: 0x0ABCu16 }),
+            (0xCABCu16, OpCode::_CXNN { x: 0xAu8, nn: 0xBCu8 }),
+            (0xDABCu16, OpCode::_DXYN { x: 0xAu8, y: 0xBu8, n: 0xCu8 }),
+            (0xEA9Eu16, OpCode::_EX9E { x: 0xAu8 }),
+            (0xEAA1u16, OpCode::_EXA1 { x: 0xAu8 }),
+            (0xFA07u16, OpCode::_FX07 { x: 0xAu8 }),
+            (0xFA0Au16, OpCode::_FX0A { x: 0xAu8 }),
+            (0xFA15u16, OpCode::_FX15 { x: 0xAu8 }),
+            (0xFA18u16, OpCode::_FX18 { x: 0xAu8 }),
+            (0xFA1Eu16, OpCode::_FX1E { x: 0xAu8 }),
+            (0xFA29u16, OpCode::_FX29 { x: 0xAu8 }),
+            (0xFA33u16, OpCode::_FX33 { x: 0xAu8 }),
+            (0xFA55u16, OpCode::_FX55 { x: 0xAu8 }),
+            (0xFA65u16, OpCode::_FX65 { x: 0xAu8 }),
         ];
 
-        for &(raw, expected) in &instructions {
+        for &(raw, expected) in &labeled_data {
             assert_eq!(
                 expected,
-                OpCode::from(raw),
+                OpCode::try_from(raw).unwrap(),
             );
         }
     }
