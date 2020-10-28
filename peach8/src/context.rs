@@ -3,6 +3,7 @@ use embedded_graphics::{image::ImageRaw, pixelcolor::BinaryColor};
 pub trait Context {
     fn on_frame<'a>(&mut self, frame: ImageRaw<'a, BinaryColor>);
     fn on_sound(&mut self);
+    fn get_keys(&mut self) -> &[bool; 16];
     fn gen_random(&mut self) -> u8;
 }
 
@@ -79,6 +80,7 @@ pub mod testing {
     pub struct TestingContext {
         sound: bool,
         frame: Option<ImageMask>,
+        keys: [bool; 16],
         rng: Rng,
     }
 
@@ -87,6 +89,7 @@ pub mod testing {
             Self {
                 sound: false,
                 frame: None,
+                keys: [false; 16],
                 rng: Rng::new_seed(seed),
             }
         }
@@ -97,6 +100,14 @@ pub mod testing {
 
         pub fn get_frame(&self) -> Option<&ImageMask> {
             self.frame.as_ref()
+        }
+
+        pub fn set_key(&mut self, n: u8) {
+            self.keys[n as usize] = true;
+        }
+
+        pub fn reset_key(&mut self, n: u8) {
+            self.keys[n as usize] = false;
         }
     }
 
@@ -111,6 +122,10 @@ pub mod testing {
 
         fn gen_random(&mut self) -> u8 {
             self.rng.generate::<u8>()
+        }
+
+        fn get_keys(&mut self) -> &[bool; 16] {
+            &self.keys
         }
     }
 
@@ -148,5 +163,14 @@ pub mod testing {
 
         ctx.on_sound();
         assert!(ctx.is_sound_on());
+
+        ctx.set_key(0x01u8);
+        ctx.set_key(0x0Fu8);
+        assert_eq!(ctx.get_keys().iter().filter(|&&k| k == true).count(), 2);
+        assert_eq!((ctx.keys[0x01], ctx.keys[0x0F]), (true, true));
+
+        ctx.reset_key(0x0Fu8);
+        assert_eq!(ctx.get_keys().iter().filter(|&&k| k == true).count(), 1);
+        assert_eq!((ctx.keys[0x01], ctx.keys[0x0F]), (true, false));
     }
 }
