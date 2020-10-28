@@ -233,7 +233,7 @@ impl<C: Context + Sized> Peach8<C> {
             OpCode::_EX9E { x }       => self.skip_if_vx_in_keys(x),
             OpCode::_EXA1 { x }       => self.skip_if_vx_not_in_keys(x),
             OpCode::_FX07 { x }       => self.assign_vx_delay_t(x),
-            OpCode::_FX0A { x }       => self.assign_vx_wait_for_key(x),
+            OpCode::_FX0A { x }       => return self.assign_vx_wait_for_key(x),
             OpCode::_FX15 { x }       => self.assign_delay_t_vx(x),
             OpCode::_FX18 { x }       => self.assign_sound_t_vx(x),
             OpCode::_FX1E { x }       => self.assign_add_i_vx(x),
@@ -447,13 +447,25 @@ impl<C: Context + Sized> Peach8<C> {
     /// Skip the following instruction if the key corresponding to the hex value currently stored in register VX is pressed
     /// EX9E { x: u8 },
     fn skip_if_vx_in_keys(&mut self, x: u8) -> Result<(), &'static str> {
+        let key = self.v[x as usize];
+        if key < 0x10u8 {
+            if [KeyState::Pressed, KeyState::Down].contains(&self.keys[key as usize]) {
+                return self.pc_increment();
+            }
+        }
         Ok(())
     }
 
     /// Skip the following instruction if the key corresponding to the hex value currently stored in register VX is not pressed
     /// EXA1 { x: u8 },
     fn skip_if_vx_not_in_keys(&mut self, x: u8) -> Result<(), &'static str> {
-        Ok(())
+        let key = self.v[x as usize];
+        if key < 0x10u8 {
+            if [KeyState::Pressed, KeyState::Down].contains(&self.keys[key as usize]) {
+                return Ok(());
+            }
+        }
+        return self.pc_increment();
     }
 
     /// Store the current value of the delay timer in register VX
@@ -466,7 +478,20 @@ impl<C: Context + Sized> Peach8<C> {
     /// Wait for a keypress and store the result in register VX
     /// FX0A { x: u8 },
     fn assign_vx_wait_for_key(&mut self, x: u8) -> Result<(), &'static str> {
-        Ok(())
+        let key = self.keys.iter().enumerate().find_map(|(n, &key)| {
+            if key == KeyState::Released {
+                Some(n)
+            } else {
+                None
+            }
+        });
+
+        if let Some(key) = key {
+            self.v[x as usize] = key as u8;
+            self.pc_increment()
+        } else {
+            Ok(())
+        }
     }
 
     /// Set the delay timer to the value of register VX
@@ -811,7 +836,9 @@ mod opcodes_execution_tests {
         assert_eq!(chip.v[vx as usize], value_x ^ value_y);
     }
 
-    /// Add the value of register VY to register VX, Set VF to 01 if a carry occurs, Set VF to 00 if a carry does not occur
+    /// Add the value of register VY to register VX
+    /// Set VF to 01 if a carry occurs
+    /// Set VF to 00 if a carry does not occur
     #[test]
     fn execute_8xy4_assign_add_vx_vy() {
         let mut chip = Peach8::new(TestingContext::new(0));
@@ -831,7 +858,9 @@ mod opcodes_execution_tests {
         assert_eq!(chip.v[15], 0x01u8);
     }
 
-    /// Subtract the value of register VY from register VX, Set VF to 00 if a borrow occurs, Set VF to 01 if a borrow does not occur
+    /// Subtract the value of register VY from register VX
+    /// Set VF to 00 if a borrow occurs
+    /// Set VF to 01 if a borrow does not occur
     #[test]
     fn execute_8xy5_assign_sub_vx_vy() {
         let mut chip = Peach8::new(TestingContext::new(0));
@@ -854,7 +883,8 @@ mod opcodes_execution_tests {
         assert_eq!(chip.v[15], 0x00u8);
     }
 
-    /// Store the value of register VY shifted right one bit in register VX, Set register VF to the least significant bit prior to the shift
+    /// Store the value of register VY shifted right one bit in register VX
+    /// Set register VF to the least significant bit prior to the shift
     #[test]
     fn execute_8xy6_assign_vx_vy_shifted_r() {
         let mut chip = Peach8::new(TestingContext::new(0));
@@ -877,7 +907,9 @@ mod opcodes_execution_tests {
         assert_eq!(chip.v[15], 0x01u8);
     }
 
-    /// Set register VX to the value of VY minus VX, Set VF to 00 if a borrow occurs, Set VF to 01 if a borrow does not occur
+    /// Set register VX to the value of VY minus VX
+    /// Set VF to 00 if a borrow occurs
+    /// Set VF to 01 if a borrow does not occur
     #[test]
     fn execute_8xy7_assign_vx_vy_sub_vx() {
         let mut chip = Peach8::new(TestingContext::new(0));
@@ -902,7 +934,8 @@ mod opcodes_execution_tests {
         assert_eq!(chip.v[15], 0x00u8);
     }
 
-    /// Store the value of register VY shifted left one bit in register VX, Set register VF to the most significant bit prior to the shift
+    /// Store the value of register VY shifted left one bit in register VX
+    /// Set register VF to the most significant bit prior to the shift
     #[test]
     fn execute_8xye_assign_vx_vy_shifted_l() {
         let mut chip = Peach8::new(TestingContext::new(0));
@@ -978,7 +1011,8 @@ mod opcodes_execution_tests {
         assert!(false);
     }
 
-    /// Draw a sprite at position VX, VY with N bytes of sprite data starting at the address stored in I, Set VF to 01 if any set pixels are changed to unset, and 00 otherwise
+    /// Draw a sprite at position VX VY with N bytes of sprite data starting at the address stored in I
+    /// Set VF to 01 if any set pixels are changed to unset, and 00 otherwise
     #[test]
     fn execute_dxyn_draw_n_at_vx_vy() {
         let mut chip = Peach8::new(TestingContext::new(0));
@@ -986,20 +1020,52 @@ mod opcodes_execution_tests {
         assert!(false)
     }
 
-    /// Skip the following instruction if the key corresponding to the hex value currently stored in register VX is pressed
+    /// Skip the following instruction
+    /// if the key corresponding to the hex value currently stored in register VX is pressed
     #[test]
     fn execute_ex9e_skip_if_vx_in_keys() {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x0000u16).unwrap();
-        assert!(false)
+        let pc = chip.pc;
+        let opcode = OpCode::_EX9E { x: 0 };
+
+        chip.assign_vx_nn(0, 0x0F).unwrap();
+        chip.update_keys();
+        chip.execute(opcode).unwrap();
+        assert_eq!(chip.pc, pc + 2);
+
+        chip.ctx.set_key(0x0Fu8);
+        chip.update_keys();
+        chip.execute(opcode).unwrap();
+        assert_eq!(chip.pc, pc + 6);
+
+        chip.assign_vx_nn(0, 0xFF).unwrap();
+        chip.update_keys();
+        chip.execute(opcode).unwrap();
+        assert_eq!(chip.pc, pc + 8);
     }
 
-    /// Skip the following instruction if the key corresponding to the hex value currently stored in register VX is not pressed
+    /// Skip the following instruction
+    /// if the key corresponding to the hex value currently stored in register VX is not pressed
     #[test]
     fn execute_exa1_skip_if_vx_not_in_keys() {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x0000u16).unwrap();
-        assert!(false)
+        let pc = chip.pc;
+        let opcode = OpCode::_EXA1 { x: 0 };
+
+        chip.assign_vx_nn(0, 0x0F).unwrap();
+        chip.update_keys();
+        chip.execute(opcode).unwrap();
+        assert_eq!(chip.pc, pc + 4);
+
+        chip.ctx.set_key(0x0Fu8);
+        chip.update_keys();
+        chip.execute(opcode).unwrap();
+        assert_eq!(chip.pc, pc + 6);
+
+        chip.assign_vx_nn(0, 0xFF).unwrap();
+        chip.update_keys();
+        chip.execute(opcode).unwrap();
+        assert_eq!(chip.pc, pc + 10);
     }
 
     /// Store the current value of the delay timer in register VX
@@ -1014,11 +1080,35 @@ mod opcodes_execution_tests {
     }
 
     /// Wait for a keypress and store the result in register VX
+    /// Should trigger on key release
     #[test]
     fn execute_fx0a_assign_vx_wait_for_key() {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x0000u16).unwrap();
-        assert!(false)
+        let pc = chip.pc;
+        let opcode = OpCode::_FX0A { x: 0 };
+
+        chip.update_keys();
+        chip.execute(opcode).unwrap();
+        assert_eq!(chip.pc, pc);
+        assert_eq!(chip.v[0], 0x00u8);
+
+        chip.ctx.set_key(0x0Fu8);
+        chip.update_keys();
+        chip.execute(opcode).unwrap();
+        assert_eq!(chip.pc, pc);
+        assert_eq!(chip.v[0], 0x00u8);
+
+        chip.ctx.reset_key(0x0Fu8);
+        chip.update_keys();
+        chip.execute(opcode).unwrap();
+        assert_eq!(chip.pc, pc + 2);
+        assert_eq!(chip.v[0], 0x0Fu8);
+
+        chip.assign_vx_nn(0, 0x00).unwrap();
+        chip.update_keys();
+        chip.execute(opcode).unwrap();
+        assert_eq!(chip.pc, pc + 2);
+        assert_eq!(chip.v[0], 0x00u8);
     }
 
     /// Set the delay timer to the value of register VX
@@ -1063,7 +1153,8 @@ mod opcodes_execution_tests {
         );
     }
 
-    /// Set I to the memory address of the sprite data corresponding to the hexadecimal digit stored in register VX
+    /// Set I to the memory address of the sprite data
+    /// corresponding to the hexadecimal digit stored in register VX
     #[test]
     fn execute_fx29_assign_i_addr_of_sprite_vx() {
         let mut chip = Peach8::new(TestingContext::new(0));
@@ -1071,7 +1162,8 @@ mod opcodes_execution_tests {
         assert!(false)
     }
 
-    /// Store the binary-coded decimal equivalent of the value stored in register VX at addresses I, I+1, and I+2
+    /// Store the binary-coded decimal equivalent of the value
+    /// stored in register VX at addresses I, I+1, and I+2
     #[test]
     fn execute_fx33_assign_mem_at_i_bcd_of_vx() {
         let mut chip = Peach8::new(TestingContext::new(0));
@@ -1097,7 +1189,8 @@ mod opcodes_execution_tests {
         );
     }
 
-    /// Store the values of registers V0 to VX inclusive in memory starting at address I, I is set to I + X + 1 after operation
+    /// Store the values of registers V0 to VX inclusive in memory
+    /// starting at address I, I is set to I + X + 1 after operation
     #[test]
     fn execute_fx55_assign_mem_at_i_v0_to_vx() {
         let mut chip = Peach8::new(TestingContext::new(0));
@@ -1128,7 +1221,8 @@ mod opcodes_execution_tests {
         );
     }
 
-    /// Fill registers V0 to VX inclusive with the values stored in memory starting at address I, I is set to I + X + 1 after operation
+    /// Fill registers V0 to VX inclusive with the values stored in memory
+    /// starting at address I, I is set to I + X + 1 after operation
     #[test]
     fn execute_fx65_assign_v0_to_vx_mem_at_i() {
         let mut chip = Peach8::new(TestingContext::new(0));
