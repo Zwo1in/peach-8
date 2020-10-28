@@ -1,7 +1,7 @@
 use core::convert::TryFrom;
 
 #[allow(unused_imports)]
-use log::{error, warn, info, debug, trace};
+use log::{debug, error, info, trace, warn};
 
 /// An enum representing 36 possible opcodes of chip-8 architecture
 ///
@@ -143,14 +143,16 @@ impl TryFrom<u16> for OpCode {
                 x: Self::read_x(raw),
                 nn: Self::read_nn(raw),
             },
-            0x5u8 => if Self::read_last(raw) == 0u8 {
-                OpCode::_5XY0 {
-                    x: Self::read_x(raw),
-                    y: Self::read_y(raw),
+            0x5u8 => {
+                if Self::read_last(raw) == 0u8 {
+                    OpCode::_5XY0 {
+                        x: Self::read_x(raw),
+                        y: Self::read_y(raw),
+                    }
+                } else {
+                    return Err("Unknown operation code");
                 }
-            } else {
-                return Err("Unknown operation code");
-            },
+            }
             0x6u8 => OpCode::_6XNN {
                 x: Self::read_x(raw),
                 nn: Self::read_nn(raw),
@@ -175,14 +177,16 @@ impl TryFrom<u16> for OpCode {
                     _ => return Err("Unknown operation code"),
                 }
             }
-            0x9u8 => if Self::read_last(raw) == 0u8 {
-                OpCode::_9XY0 {
-                    x: Self::read_x(raw),
-                    y: Self::read_y(raw),
+            0x9u8 => {
+                if Self::read_last(raw) == 0u8 {
+                    OpCode::_9XY0 {
+                        x: Self::read_x(raw),
+                        y: Self::read_y(raw),
+                    }
+                } else {
+                    return Err("Unknown operation code");
                 }
-            } else {
-                return Err("Unknown operation code");
-            },
+            }
             0xAu8 => OpCode::_ANNN {
                 nnn: Self::read_nnn(raw),
             },
@@ -260,7 +264,7 @@ mod tests {
         assert_eq!(0xEEFu16, OpCode::read_nnn(0xBEEFu16));
     }
 
-    /// OpCode may only be invalid in case where the last byte have 
+    /// OpCode may only be invalid in case where the last byte have
     /// [partially] predefined value. First byte is always valid, as
     /// whole 4 most significant bits range is used in opcodes, and the
     /// latter 4 bits are placeholders for value in each opcode

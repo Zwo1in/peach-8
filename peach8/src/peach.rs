@@ -3,10 +3,7 @@
 use core::convert::{Infallible, TryFrom};
 
 use bitvec::prelude::*;
-use heapless::{
-    Vec,
-    consts::U64,
-};
+use heapless::{consts::U64, Vec};
 
 use crate::context::Context;
 
@@ -79,7 +76,10 @@ mod tests {
         chip.pc_increment().unwrap();
         assert_eq!(chip.pc, 0x0204u16);
         chip.pc = 0x0FFEu16;
-        assert_eq!(chip.pc_increment(), Err("Attempted to increment pc out of address space"));
+        assert_eq!(
+            chip.pc_increment(),
+            Err("Attempted to increment pc out of address space")
+        );
     }
 }
 
@@ -455,7 +455,7 @@ impl<C: Context + Sized> Peach8<C> {
             for idx in 0..=x {
                 self.v[idx as usize] = self.memory[self.i as usize];
                 self.i += 1
-            };
+            }
             Ok(())
         } else {
             Err("Attempted to load memory out of address space")
@@ -553,10 +553,7 @@ mod opcodes_execution_tests {
         chip.execute(opcode).unwrap();
         assert_eq!(chip.pc, 0x202u16);
 
-        assert_eq!(
-            chip.execute(opcode),
-            Err("Can't return. Not in subroutine"),
-        );
+        assert_eq!(chip.execute(opcode), Err("Can't return. Not in subroutine"));
     }
 
     /// Jump to address NNN
@@ -565,22 +562,13 @@ mod opcodes_execution_tests {
         let mut chip = Peach8::new(TestingContext::new(0));
         let opcode = OpCode::try_from(0x1220u16).unwrap();
         chip.execute(opcode);
-        assert_eq!(
-            chip.pc,
-            0x220u16,
-        );
+        assert_eq!(chip.pc, 0x220u16);
         let opcode = OpCode::try_from(0x1FFFu16).unwrap();
         chip.execute(opcode);
-        assert_eq!(
-            chip.pc,
-            0xFFFu16,
-        );
+        assert_eq!(chip.pc, 0xFFFu16);
         let opcode = OpCode::try_from(0x1000u16).unwrap();
         chip.execute(opcode);
-        assert_eq!(
-            chip.pc,
-            0x000u16,
-        );
+        assert_eq!(chip.pc, 0x000u16);
     }
 
     /// Execute subroutine starting at address NNN
@@ -688,10 +676,7 @@ mod opcodes_execution_tests {
 
         let opcode = OpCode::_8XY0 { x: vx, y: vy };
         chip.execute(opcode).unwrap();
-        assert_eq!(
-            chip.v[vx as usize],
-            value,
-        );
+        assert_eq!(chip.v[vx as usize], value);
     }
 
     /// Set VX to VX OR VY
@@ -708,10 +693,7 @@ mod opcodes_execution_tests {
 
         let opcode = OpCode::_8XY1 { x: vx, y: vy };
         chip.execute(opcode).unwrap();
-        assert_eq!(
-            chip.v[vx as usize],
-            value_x | value_y,
-        );
+        assert_eq!(chip.v[vx as usize], value_x | value_y);
     }
 
     /// Set VX to VX AND VY
@@ -728,10 +710,7 @@ mod opcodes_execution_tests {
 
         let opcode = OpCode::_8XY2 { x: vx, y: vy };
         chip.execute(opcode).unwrap();
-        assert_eq!(
-            chip.v[vx as usize],
-            value_x & value_y,
-        );
+        assert_eq!(chip.v[vx as usize], value_x & value_y);
     }
 
     /// Set VX to VX XOR VY
@@ -748,10 +727,7 @@ mod opcodes_execution_tests {
 
         let opcode = OpCode::_8XY3 { x: vx, y: vy };
         chip.execute(opcode).unwrap();
-        assert_eq!(
-            chip.v[vx as usize],
-            value_x ^ value_y,
-        );
+        assert_eq!(chip.v[vx as usize], value_x ^ value_y);
     }
 
     /// Add the value of register VY to register VX, Set VF to 01 if a carry occurs, Set VF to 00 if a carry does not occur
@@ -793,7 +769,7 @@ mod opcodes_execution_tests {
         assert_eq!(chip.v[15], 0x01u8);
 
         chip.execute(opcode).unwrap();
-        assert_eq!(chip.v[vx as usize], value_x.wrapping_sub(2*value_y));
+        assert_eq!(chip.v[vx as usize], value_x.wrapping_sub(2 * value_y));
         assert_eq!(chip.v[15], 0x00u8);
     }
 
@@ -1052,10 +1028,7 @@ mod opcodes_execution_tests {
 
         let opcode = OpCode::_FX55 { x: 0 };
         chip.execute(opcode);
-        assert_eq!(
-            chip.memory[(chip.i - 1) as usize],
-            0xDEu8,
-        );
+        assert_eq!(chip.memory[(chip.i - 1) as usize], 0xDEu8);
         assert_eq!(chip.i, 0x0001u16);
 
         let opcode = OpCode::_FX55 { x: 3 };
