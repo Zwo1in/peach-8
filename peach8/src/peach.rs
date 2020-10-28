@@ -6,8 +6,28 @@ use bitvec::prelude::*;
 use heapless::{consts::U64, Vec};
 
 use crate::context::Context;
-
 use crate::opcode::OpCode;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum KeyState {
+    Pressed,
+    Down,
+    Released,
+    Up,
+}
+
+impl KeyState {
+    #[rustfmt::skip]
+    fn update(&mut self, pressed: bool) -> &Self {
+        *self = match (*self, pressed) {
+            (KeyState::Pressed,  true)  | (KeyState::Down, true)  => KeyState::Down,
+            (KeyState::Pressed,  false) | (KeyState::Down, false) => KeyState::Released,
+            (KeyState::Released, true)  | (KeyState::Up,   true)  => KeyState::Pressed,
+            (KeyState::Released, false) | (KeyState::Up,   false) => KeyState::Up,
+        };
+        self
+    }
+}
 
 pub struct Peach8<C: Context + Sized> {
     ctx: C,
@@ -15,8 +35,9 @@ pub struct Peach8<C: Context + Sized> {
     i: u16,
     pc: u16,
     gfx: [BitArray<Msb0, [u32; 2]>; 32],
-    memory: [u8; 4096],
+    keys: [KeyState; 16],
     stack: Vec<u16, U64>,
+    memory: [u8; 4096],
     delay_timer: u8,
     sound_timer: u8,
 }
@@ -29,8 +50,9 @@ impl<C: Context + Sized> Peach8<C> {
             i: 0,
             pc: 0x200,
             gfx: [BitArray::zeroed(); 32],
-            memory: [0; 4096],
+            keys: [KeyState::Up; 16],
             stack: Vec::new(),
+            memory: [0; 4096],
             delay_timer: 0,
             sound_timer: 0,
         }
@@ -51,6 +73,16 @@ impl<C: Context + Sized> Peach8<C> {
         } else {
             Err("Attempted to increment pc out of address space")
         }
+    }
+
+    fn update_keys(&mut self) {
+        self.ctx
+            .get_keys()
+            .iter()
+            .zip(self.keys.iter_mut())
+            .for_each(|(&key, state)| {
+                state.update(key);
+            });
     }
 
     fn tick_timers(&mut self) -> nb::Result<(), Infallible> {
@@ -80,6 +112,55 @@ mod tests {
             chip.pc_increment(),
             Err("Attempted to increment pc out of address space")
         );
+    }
+
+    #[test]
+    fn key_state_update() {
+        let mut state = KeyState::Pressed;
+        assert_eq!(state.update(true), &KeyState::Down);
+        let mut state = KeyState::Pressed;
+        assert_eq!(state.update(false), &KeyState::Released);
+
+        let mut state = KeyState::Down;
+        assert_eq!(state.update(true), &KeyState::Down);
+        let mut state = KeyState::Down;
+        assert_eq!(state.update(false), &KeyState::Released);
+
+        let mut state = KeyState::Released;
+        assert_eq!(state.update(true), &KeyState::Pressed);
+        let mut state = KeyState::Released;
+        assert_eq!(state.update(false), &KeyState::Up);
+
+        let mut state = KeyState::Up;
+        assert_eq!(state.update(true), &KeyState::Pressed);
+        let mut state = KeyState::Up;
+        assert_eq!(state.update(false), &KeyState::Up);
+    }
+
+    #[test]
+    fn update_keys() {
+        let mut chip = Peach8::new(TestingContext::new(0));
+
+        chip.ctx.set_key(0x0Fu8);
+        chip.update_keys();
+        assert_eq!(chip.keys[0x0Fusize], KeyState::Pressed);
+        assert_eq!(chip.keys[0x02usize], KeyState::Up);
+        assert_eq!(chip.keys.iter().filter(|&&k| k == KeyState::Up).count(), 15);
+
+        chip.ctx.set_key(0x02u8);
+        chip.update_keys();
+        assert_eq!(chip.keys[0x0Fusize], KeyState::Down);
+        assert_eq!(chip.keys[0x02usize], KeyState::Pressed);
+
+        chip.ctx.reset_key(0x0Fu8);
+        chip.update_keys();
+        assert_eq!(chip.keys[0x0Fusize], KeyState::Released);
+        assert_eq!(chip.keys[0x02usize], KeyState::Down);
+
+        chip.ctx.reset_key(0x02u8);
+        chip.update_keys();
+        assert_eq!(chip.keys[0x0Fusize], KeyState::Up);
+        assert_eq!(chip.keys[0x02usize], KeyState::Released);
     }
 }
 
