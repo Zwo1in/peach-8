@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use core::convert::{Infallible, TryFrom};
+use core::convert::Infallible;
 
 use bitvec::prelude::*;
 use heapless::{consts::U64, Vec};
@@ -60,10 +60,32 @@ impl<C: Context + Sized> Peach8<C> {
 
     /// Load program from slice of bytes to memory from 0x200 (_start address)
     pub fn load(&mut self, prog: &[u8]) {
+        let fontset: &[u8] = &[
+            0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+            0x20, 0x60, 0x20, 0x20, 0x70, // 1
+            0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+            0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+            0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+            0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+            0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+            0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+            0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+            0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+            0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+            0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+            0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+            0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+            0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+            0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+        ];
+        self.memory[0x50..]
+            .iter_mut()
+            .zip(fontset)
+            .for_each(|(mem, &data)| *mem = data);
         self.memory[0x200..]
             .iter_mut()
             .zip(prog)
-            .for_each(|(mem, &prog)| *mem = prog);
+            .for_each(|(mem, &data)| *mem = data);
     }
 
     fn pc_increment(&mut self) -> Result<(), &'static str> {
@@ -196,7 +218,6 @@ mod rom_tests {
     fn rom_skosulor_c8int() {
         let mut chip = Peach8::new(TestingContext::new(0));
         let rom = include_bytes!("../test-data/skosulor_c8int/test.c8");
-        let mut chip = Peach8::new(TestingContext::new(0));
         chip.load(&rom[..]);
     }
 }
@@ -248,12 +269,13 @@ impl<C: Context + Sized> Peach8<C> {
     /// Execute machine language subroutine at address NNN
     /// 0NNN { nnn: u16 },
     fn exec_ml_subroutine_at(&mut self, nnn: u16) -> Result<(), &'static str> {
-        Ok(())
+        Err("Machine code subroutines not supported")
     }
 
     /// Clear the screen
     /// 00E0,
     fn clear_screen(&mut self) -> Result<(), &'static str> {
+        self.gfx = [BitArray::zeroed(); 32];
         Ok(())
     }
 
@@ -435,12 +457,38 @@ impl<C: Context + Sized> Peach8<C> {
     /// Set VX to a random number with a mask of NN
     /// CXNN { x: u8, nn: u8 },
     fn assign_vx_ranom_and_nn(&mut self, x: u8, nn: u8) -> Result<(), &'static str> {
+        let value = self.ctx.gen_random() & nn;
+        self.v[x as usize] = value;
         Ok(())
     }
 
     /// Draw a sprite at position VX, VY with N bytes of sprite data starting at the address stored in I, Set VF to 01 if any set pixels are changed to unset, and 00 otherwise
     /// DXYN { x: u8, y: u8, n: u8 },
     fn draw_n_at_vx_vy(&mut self, x: u8, y: u8, n: u8) -> Result<(), &'static str> {
+        if self.i + n as u16 > self.memory.len() as u16 {
+            return Err("Attempted to read memory out of address space");
+        }
+
+        let x = self.v[x as usize] as usize % self.gfx[0].len();
+        let y = self.v[y as usize] as usize % self.gfx.len();
+        let x_stop = core::cmp::min(x + n as usize, self.gfx[0].len()) as usize;
+        let y_stop = core::cmp::min(y + n as usize, self.gfx.len()) as usize;
+
+        let mut collision = false;
+        for n in y..y_stop {
+            let row = BitSlice::<Msb0, _>::from_element(&self.memory[self.i as usize + n - y]);
+            self.gfx[n][x..x_stop]
+                .iter_mut()
+                .zip(row)
+                .for_each(|(mut lhs, rhs)| {
+                    if *lhs && *rhs {
+                        collision = true;
+                    }
+                    *lhs = *lhs ^ rhs;
+                });
+        }
+
+        self.v[15] = if collision { 0x01u8 } else { 0x00u8 };
         Ok(())
     }
 
@@ -523,6 +571,8 @@ impl<C: Context + Sized> Peach8<C> {
     /// Set I to the memory address of the sprite data corresponding to the hexadecimal digit stored in register VX
     /// FX29 { x: u8 },
     fn assign_i_addr_of_sprite_vx(&mut self, x: u8) -> Result<(), &'static str> {
+        let value = (self.v[x as usize] % 16) as u16;
+        self.i = 0x50u16 + value * 5;
         Ok(())
     }
 
@@ -572,19 +622,17 @@ impl<C: Context + Sized> Peach8<C> {
 #[cfg(test)]
 mod opcodes_execution_tests {
     use super::*;
+
+    use core::convert::{TryFrom, TryInto};
+
+    use crate::assert_eq_2d;
     use crate::context::testing::TestingContext;
+    use crate::utils::testing::ToMask;
 
     #[test]
-    fn pc_manipulation_test() {
+    fn pc_manipulation_test() -> Result<(), &'static str> {
         let no_jump_opcodes = [
-            0x0AAAu16, // 0NNN exec_ml_subroutine_at(nnn)
             0x00E0u16, // 00E0 clear_screen()
-            0x00EEu16, // 00EE subroutine_return()
-            0x1AAAu16, // 1NNN jump_to(nnn)
-            0x2AAAu16, // 2NNN exec_subroutine_at(nnn)
-            0x3BAAu16, // 3XNN skip_if_vx_eq_nn(x nn)
-            0x4BAAu16, // 4XNN skip_if_vx_ne_nn(x nn)
-            0x5BC0u16, // 5XY0 skip_if_vx_eq_vy(x y)
             0x6BAAu16, // 6XNN assign_vx_nn(x nn)
             0x7BAAu16, // 7XNN assign_add_vx_nn(x nn)
             0x8BC0u16, // 8XY0 assign_vx_vy(x y)
@@ -596,15 +644,10 @@ mod opcodes_execution_tests {
             0x8BC6u16, // 8XY6 assign_vx_vy_shifted_r(x y)
             0x8BC7u16, // 8XY7 assign_vx_vy_sub_vx(x y)
             0x8BCEu16, // 8XYE assign_vx_vy_shifted_l(x y)
-            0x9BC0u16, // 9XY0 skip_if_vx_ne_vy(x y)
             0xAAAAu16, // ANNN assign_i_nnn(nnn)
-            0xBAAAu16, // BNNN jump_to_nnn_add_v0(nnn)
             0xCBAAu16, // CXNN assign_vx_ranom_and_nn(x nn)
             0xDBCAu16, // DXYN draw_n_at_vx_vy(x y n)
-            0xEB9Eu16, // EX9E skip_if_vx_in_keys(x)
-            0xEBA1u16, // EXA1 skip_if_vx_not_in_keys(x)
             0xFB07u16, // FX07 assign_vx_delay_t(x)
-            0xFB0Au16, // FX0A assign_vx_wait_for_key(x)
             0xFB15u16, // FX15 assign_delay_t_vx(x)
             0xFB18u16, // FX18 assign_sound_t_vx(x)
             0xFB1Eu16, // FX1E assign_add_i_vx(x)
@@ -614,37 +657,117 @@ mod opcodes_execution_tests {
             0xFB65u16, // FX65 assign_v0_to_vx_mem_at_i(x)
         ];
         // Let the skip never be present, it is validated somewhere else
-        //let skip_opcodes = [];
-        //let jump_opcodes = [];
+        let skip_opcodes = [
+            0x3BAAu16, // 3XNN skip_if_vx_eq_nn(x nn)
+            0x4B00u16, // 4XNN skip_if_vx_ne_nn(x nn)
+            0x5BC0u16, // 5XY0 skip_if_vx_eq_vy(x y)
+            0x9BB0u16, // 9XY0 skip_if_vx_ne_vy(x y)
+            0xEB9Eu16, // EX9E skip_if_vx_in_keys(x)
+            0xECA1u16, // EXA1 skip_if_vx_not_in_keys(x)
+        ];
+        let jump_opcodes = [
+            0x1AAAu16, // 1NNN jump_to(nnn)
+            0x2AAAu16, // 2NNN exec_subroutine_at(nnn)
+            0xBAAAu16, // BNNN jump_to_nnn_add_v0(nnn)
+        ];
         // Should increment pc, but nevertheless is a jump
-        //let return_subr_opcode = [];
-        // Wait for a keypress should stop execution, hovewer to not block the whole routine
-        // it just doesn't increment pc until wait condition is met
-        //let wait_opcode = [];
-        assert!(false)
+        let return_subr_opcode = 0x00EEu16; // 00EE subroutine_return()
+                                            // Wait for a keypress should stop execution, hovewer to not block the whole routine
+                                            // it just doesn't increment pc until wait condition is met
+        let wait_opcode = 0xFB0Au16; // FX0A assign_vx_wait_for_key(x)
+                                     // This always returns Err
+        let _ommited = 0x0AAAu16; // 0NNN exec_ml_subroutine_at(nnn)
+
+        let mut chip = Peach8::new(TestingContext::new(0));
+        let mut pc = chip.pc;
+
+        for op in &no_jump_opcodes {
+            chip.execute((*op).try_into()?)?;
+            assert_eq!(chip.pc, pc + 2);
+            pc += 2;
+        }
+
+        chip.assign_vx_nn(0xC, 0x01u8)?; // no skip 5XY0
+        chip.ctx.set_key(0x01u8); // no skip EXA1
+        chip.update_keys();
+        for op in &skip_opcodes {
+            chip.execute((*op).try_into()?)?;
+            assert_eq!(chip.pc, pc + 2);
+            pc += 2;
+        }
+
+        for op in &jump_opcodes {
+            chip.execute((*op).try_into()?)?;
+            assert_eq!(chip.pc, 0x0AAAu16);
+        }
+
+        chip.pc = 0x200;
+        chip.exec_subroutine_at(0x0BBB)?;
+        chip.execute(return_subr_opcode.try_into()?)?;
+        assert_eq!(chip.pc, 0x202);
+
+        chip.execute(wait_opcode.try_into()?)?;
+        assert_eq!(chip.pc, 0x202);
+        chip.ctx.set_key(0x01);
+        chip.update_keys();
+        chip.ctx.reset_key(0x01);
+        chip.update_keys();
+        chip.execute(wait_opcode.try_into()?)?;
+        assert_eq!(chip.pc, 0x204);
+
+        Ok(())
     }
 
     /// Execute machine language subroutine at address NNN
     #[test]
-    fn execute_0nnn_exec_ml_subroutine_at() {
+    fn execute_0nnn_exec_ml_subroutine_at() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x0000u16).unwrap();
-        assert!(false)
+        let opcode = OpCode::try_from(0x0000u16)?;
+        assert_eq!(
+            chip.execute(opcode),
+            Err("Machine code subroutines not supported"),
+        );
+        Ok(())
     }
 
     /// Clear the screen
     #[test]
-    fn execute_00e0_clear_screen() {
+    fn execute_00e0_clear_screen() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x0000u16).unwrap();
-        assert!(false)
+        let opcode = OpCode::_00E0;
+        let empty_mask_str = include_str!("../test-data/context/empty_mask");
+        chip.load(&[]);
+
+        assert_eq_2d!(
+            x_range: .., y_range: ..;
+            chip.gfx.to_mask(), empty_mask_str.to_mask()
+        );
+
+        chip.assign_vx_nn(1, 0x0F)?;
+        chip.assign_i_addr_of_sprite_vx(1)?;
+        chip.draw_n_at_vx_vy(0, 0, 5)?;
+        assert_eq_2d!(
+            x_range: 0..8, y_range: 0..5;
+            chip.gfx.to_mask(), "####....
+                                 #.......
+                                 ####....
+                                 #.......
+                                 #.......".to_mask()
+        );
+
+        chip.execute(opcode)?;
+        assert_eq_2d!(
+            x_range: .., y_range: ..;
+            chip.gfx.to_mask(), empty_mask_str.to_mask()
+        );
+        Ok(())
     }
 
     /// Return from a subroutine
     #[test]
-    fn execute_00ee_subroutine_return() {
+    fn execute_00ee_subroutine_return() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x00EEu16).unwrap();
+        let opcode = OpCode::try_from(0x00EEu16)?;
         let jumps = [0x260u16, 0x7F1u16, 0xFA2u16, 0x000u16];
         jumps
             .iter()
@@ -653,560 +776,657 @@ mod opcodes_execution_tests {
         assert_eq!(chip.pc, 0x000u16);
 
         for &addr in jumps.iter().rev().skip(1) {
-            chip.execute(opcode).unwrap();
+            chip.execute(opcode)?;
             assert_eq!(chip.pc, addr + 2u16); // +2 because pc increments on return
         }
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, 0x202u16);
 
         assert_eq!(chip.execute(opcode), Err("Can't return. Not in subroutine"));
+        Ok(())
     }
 
     /// Jump to address NNN
     #[test]
-    fn execute_1nnn_jump_to() {
+    fn execute_1nnn_jump_to() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x1220u16).unwrap();
-        chip.execute(opcode);
+        let opcode = OpCode::try_from(0x1220u16)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, 0x220u16);
-        let opcode = OpCode::try_from(0x1FFFu16).unwrap();
-        chip.execute(opcode);
+        let opcode = OpCode::try_from(0x1FFFu16)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, 0xFFFu16);
-        let opcode = OpCode::try_from(0x1000u16).unwrap();
-        chip.execute(opcode);
+        let opcode = OpCode::try_from(0x1000u16)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, 0x000u16);
+        Ok(())
     }
 
     /// Execute subroutine starting at address NNN
     #[test]
-    fn execute_2nnn_exec_subroutine_at() {
+    fn execute_2nnn_exec_subroutine_at() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let subr_addr = 0x222u16;
         let opcode = OpCode::_2NNN { nnn: subr_addr };
-        chip.execute(opcode);
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, subr_addr);
         assert_eq!(chip.stack.len(), 1);
         assert_eq!(chip.stack.pop().unwrap(), 0x200u16);
 
         for _ in 0..64 {
-            chip.execute(opcode);
+            chip.execute(opcode)?;
         }
         assert_eq!(
             chip.execute(opcode),
             Err("Cannot enter subroutine, stack is full"),
         );
+        Ok(())
     }
 
     /// Skip the following instruction if the value of register VX equals NN
     #[test]
-    fn execute_3xnn_skip_if_vx_eq_nn() {
+    fn execute_3xnn_skip_if_vx_eq_nn() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let pc = chip.pc;
         let opcode = OpCode::_3XNN { x: 0, nn: 0x22u8 };
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 2);
 
-        chip.assign_vx_nn(0, 0x22u8);
-        chip.execute(opcode).unwrap();
+        chip.assign_vx_nn(0, 0x22u8)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 6);
+        Ok(())
     }
 
     /// Skip the following instruction if the value of register VX is not equal to NN
     #[test]
-    fn execute_4xnn_skip_if_vx_ne_nn() {
+    fn execute_4xnn_skip_if_vx_ne_nn() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let pc = chip.pc;
         let opcode = OpCode::_4XNN { x: 0, nn: 0x22u8 };
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 4);
 
-        chip.assign_vx_nn(0, 0x22u8);
-        chip.execute(opcode).unwrap();
+        chip.assign_vx_nn(0, 0x22u8)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 6);
+        Ok(())
     }
 
     /// Skip the following instruction if the value of register VX is equal to the value of register VY
     #[test]
-    fn execute_5xy0_skip_if_vx_eq_vy() {
+    fn execute_5xy0_skip_if_vx_eq_vy() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let pc = chip.pc;
         let opcode = OpCode::_5XY0 { x: 0, y: 1 };
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 4);
 
-        chip.assign_vx_nn(0, 0x22u8);
-        chip.execute(opcode).unwrap();
+        chip.assign_vx_nn(0, 0x22u8)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 6);
+        Ok(())
     }
 
     /// Store number NN in register VX
     #[test]
-    fn execute_6xnn_assign_vx_nn() {
+    fn execute_6xnn_assign_vx_nn() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x6122u16).unwrap();
-        chip.execute(opcode).unwrap();
+        let opcode = OpCode::try_from(0x6122u16)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.v[1], 0x22u8);
 
-        let opcode = OpCode::try_from(0x6FFFu16).unwrap();
-        chip.execute(opcode).unwrap();
+        let opcode = OpCode::try_from(0x6FFFu16)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.v[15], 0xFFu8);
+        Ok(())
     }
 
     /// Add the value NN to register VX
     #[test]
-    fn execute_7xnn_assign_add_vx_nn() {
+    fn execute_7xnn_assign_add_vx_nn() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let value = 0x09u8;
         let opcode = OpCode::_7XNN { x: 0, nn: value };
         // no flag should be set in VF during this execution
-        chip.assign_vx_nn(0xFu8, value).unwrap();
+        chip.assign_vx_nn(0xFu8, value)?;
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[0], value);
         assert_eq!(chip.v[15], value);
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[0], value.wrapping_mul(2u8));
         assert_eq!(chip.v[15], value);
+        Ok(())
     }
 
     /// Store the value of register VY in register VX
     #[test]
-    fn execute_8xy0_assign_vx_vy() {
+    fn execute_8xy0_assign_vx_vy() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let vx = 0x02u8;
         let vy = 0x04u8;
         let value = 0x09u8;
 
-        chip.assign_vx_nn(vy, value).unwrap();
+        chip.assign_vx_nn(vy, value)?;
 
         let opcode = OpCode::_8XY0 { x: vx, y: vy };
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vx as usize], value);
+        Ok(())
     }
 
     /// Set VX to VX OR VY
     #[test]
-    fn execute_8xy1_assign_or_vx_vy() {
+    fn execute_8xy1_assign_or_vx_vy() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let vx = 0x02u8;
         let vy = 0x04u8;
         let value_x = 0xF1u8;
         let value_y = 0x0Fu8;
 
-        chip.assign_vx_nn(vx, value_x).unwrap();
-        chip.assign_vx_nn(vy, value_y).unwrap();
+        chip.assign_vx_nn(vx, value_x)?;
+        chip.assign_vx_nn(vy, value_y)?;
 
         let opcode = OpCode::_8XY1 { x: vx, y: vy };
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vx as usize], value_x | value_y);
+        Ok(())
     }
 
     /// Set VX to VX AND VY
     #[test]
-    fn execute_8xy2_assign_and_vx_vy() {
+    fn execute_8xy2_assign_and_vx_vy() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let vx = 0x02u8;
         let vy = 0x04u8;
         let value_x = 0xF1u8;
         let value_y = 0x0Fu8;
 
-        chip.assign_vx_nn(vx, value_x).unwrap();
-        chip.assign_vx_nn(vy, value_y).unwrap();
+        chip.assign_vx_nn(vx, value_x)?;
+        chip.assign_vx_nn(vy, value_y)?;
 
         let opcode = OpCode::_8XY2 { x: vx, y: vy };
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vx as usize], value_x & value_y);
+        Ok(())
     }
 
     /// Set VX to VX XOR VY
     #[test]
-    fn execute_8xy3_assign_xor_vx_vy() {
+    fn execute_8xy3_assign_xor_vx_vy() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let vx = 0x02u8;
         let vy = 0x04u8;
         let value_x = 0xF1u8;
         let value_y = 0x1Fu8;
 
-        chip.assign_vx_nn(vx, value_x).unwrap();
-        chip.assign_vx_nn(vy, value_y).unwrap();
+        chip.assign_vx_nn(vx, value_x)?;
+        chip.assign_vx_nn(vy, value_y)?;
 
         let opcode = OpCode::_8XY3 { x: vx, y: vy };
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vx as usize], value_x ^ value_y);
+        Ok(())
     }
 
     /// Add the value of register VY to register VX
     /// Set VF to 01 if a carry occurs
     /// Set VF to 00 if a carry does not occur
     #[test]
-    fn execute_8xy4_assign_add_vx_vy() {
+    fn execute_8xy4_assign_add_vx_vy() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let vx = 0x02u8;
         let vy = 0x04u8;
         let value = 0x8Fu8;
 
-        chip.assign_vx_nn(vy, value).unwrap();
+        chip.assign_vx_nn(vy, value)?;
 
         let opcode = OpCode::_8XY4 { x: vx, y: vy };
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vx as usize], value);
         assert_eq!(chip.v[15], 0x00u8);
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vx as usize], value.wrapping_mul(2));
         assert_eq!(chip.v[15], 0x01u8);
+        Ok(())
     }
 
     /// Subtract the value of register VY from register VX
     /// Set VF to 00 if a borrow occurs
     /// Set VF to 01 if a borrow does not occur
     #[test]
-    fn execute_8xy5_assign_sub_vx_vy() {
+    fn execute_8xy5_assign_sub_vx_vy() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let vx = 0x02u8;
         let vy = 0x04u8;
         let value_x = 0x05u8;
         let value_y = 0x04u8;
 
-        chip.assign_vx_nn(vx, value_x).unwrap();
-        chip.assign_vx_nn(vy, value_y).unwrap();
+        chip.assign_vx_nn(vx, value_x)?;
+        chip.assign_vx_nn(vy, value_y)?;
 
         let opcode = OpCode::_8XY5 { x: vx, y: vy };
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vx as usize], value_x.wrapping_sub(value_y));
         assert_eq!(chip.v[15], 0x01u8);
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vx as usize], value_x.wrapping_sub(2 * value_y));
         assert_eq!(chip.v[15], 0x00u8);
+        Ok(())
     }
 
     /// Store the value of register VY shifted right one bit in register VX
     /// Set register VF to the least significant bit prior to the shift
     #[test]
-    fn execute_8xy6_assign_vx_vy_shifted_r() {
+    fn execute_8xy6_assign_vx_vy_shifted_r() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let vx = 0x02u8;
         let vy = 0x04u8;
         let value = 0b1111_1110u8;
 
-        chip.assign_vx_nn(vy, value).unwrap();
+        chip.assign_vx_nn(vy, value)?;
 
         let opcode = OpCode::_8XY6 { x: vx, y: vy };
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vy as usize], value >> 1);
         assert_eq!(chip.v[vx as usize], value >> 1);
         assert_eq!(chip.v[15], 0x00u8);
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vy as usize], value >> 2);
         assert_eq!(chip.v[vx as usize], value >> 2);
         assert_eq!(chip.v[15], 0x01u8);
+        Ok(())
     }
 
     /// Set register VX to the value of VY minus VX
     /// Set VF to 00 if a borrow occurs
     /// Set VF to 01 if a borrow does not occur
     #[test]
-    fn execute_8xy7_assign_vx_vy_sub_vx() {
+    fn execute_8xy7_assign_vx_vy_sub_vx() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let vx = 0x02u8;
         let vy = 0x04u8;
         let value_x = 0x04u8;
         let value_y = 0x05u8;
 
-        chip.assign_vx_nn(vx, value_x).unwrap();
-        chip.assign_vx_nn(vy, value_y).unwrap();
+        chip.assign_vx_nn(vx, value_x)?;
+        chip.assign_vx_nn(vy, value_y)?;
 
         let opcode = OpCode::_8XY7 { x: vx, y: vy };
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vx as usize], value_y.wrapping_sub(value_x));
         assert_eq!(chip.v[15], 0x01u8);
 
         let value_x = value_y + 2;
-        chip.assign_vx_nn(vx, value_x).unwrap();
-        chip.execute(opcode).unwrap();
+        chip.assign_vx_nn(vx, value_x)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vx as usize], value_y.wrapping_sub(value_x));
         assert_eq!(chip.v[15], 0x00u8);
+        Ok(())
     }
 
     /// Store the value of register VY shifted left one bit in register VX
     /// Set register VF to the most significant bit prior to the shift
     #[test]
-    fn execute_8xye_assign_vx_vy_shifted_l() {
+    fn execute_8xye_assign_vx_vy_shifted_l() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let vx = 0x02u8;
         let vy = 0x04u8;
         let value = 0b0111_1111u8;
 
-        chip.assign_vx_nn(vy, value).unwrap();
+        chip.assign_vx_nn(vy, value)?;
 
         let opcode = OpCode::_8XYE { x: vx, y: vy };
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vy as usize], value << 1);
         assert_eq!(chip.v[vx as usize], value << 1);
         assert_eq!(chip.v[15], 0x00u8);
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.v[vy as usize], value << 2);
         assert_eq!(chip.v[vx as usize], value << 2);
         assert_eq!(chip.v[15], 0x01u8);
+        Ok(())
     }
 
     /// Skip the following instruction if the value of register VX is not equal to the value of register VY
     #[test]
-    fn execute_9xy0_skip_if_vx_ne_vy() {
+    fn execute_9xy0_skip_if_vx_ne_vy() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let pc = chip.pc;
         let opcode = OpCode::_9XY0 { x: 0, y: 1 };
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 2);
 
-        chip.assign_vx_nn(0, 0x22u8);
-        chip.execute(opcode).unwrap();
+        chip.assign_vx_nn(0, 0x22u8)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 6);
+        Ok(())
     }
 
     /// Store memory address NNN in register I
     #[test]
-    fn execute_annn_assign_i_nnn() {
+    fn execute_annn_assign_i_nnn() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let opcode = OpCode::_ANNN { nnn: 0x0FFFu16 };
         assert_eq!(chip.i, 0x0000u16);
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.i, 0x0FFFu16);
+        Ok(())
     }
 
     /// Jump to address NNN + V0
     #[test]
-    fn execute_bnnn_jump_to_nnn_add_v0() {
+    fn execute_bnnn_jump_to_nnn_add_v0() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0xB220u16).unwrap();
+        let opcode = OpCode::try_from(0xB220u16)?;
 
-        chip.execute(opcode);
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, 0x220u16);
 
-        chip.assign_vx_nn(0, 0xFFu8);
-        let opcode = OpCode::try_from(0xBF00u16).unwrap();
-        chip.execute(opcode);
+        chip.assign_vx_nn(0, 0xFFu8)?;
+        let opcode = OpCode::try_from(0xBF00u16)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, 0xFFFu16);
 
-        let opcode = OpCode::try_from(0xBFFBu16).unwrap();
+        let opcode = OpCode::try_from(0xBFFBu16)?;
         assert_eq!(
             chip.execute(opcode),
             Err("Attempted to set pc out of address space"),
         );
+        Ok(())
     }
 
     /// Set VX to a random number with a mask of NN
     #[test]
-    fn execute_cxnn_assign_vx_random_and_nn() {
-        let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x0000u16).unwrap();
-        assert!(false);
+    fn execute_cxnn_assign_vx_random_and_nn() -> Result<(), &'static str> {
+        // Not testing this opcode currently
+        assert!(true);
+        Ok(())
     }
 
     /// Draw a sprite at position VX VY with N bytes of sprite data starting at the address stored in I
     /// Set VF to 01 if any set pixels are changed to unset, and 00 otherwise
+    #[rustfmt::skip]
     #[test]
-    fn execute_dxyn_draw_n_at_vx_vy() {
+    fn execute_dxyn_draw_n_at_vx_vy() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x0000u16).unwrap();
-        assert!(false)
+        chip.load(&[]);
+        let opcode = OpCode::_DXYN { x: 0, y: 1, n: 5 };
+
+        chip.assign_vx_nn(0, 0x02)?;
+        chip.assign_vx_nn(1, 0x01)?;
+        chip.assign_vx_nn(2, 0x0F)?;
+        chip.assign_i_addr_of_sprite_vx(2)?;
+        chip.execute(opcode)?;
+        assert_eq_2d!(
+            x_range: 0..8, y_range: 0..8;
+            chip.gfx.to_mask(), "........
+                                 ..####..
+                                 ..#.....
+                                 ..####..
+                                 ..#.....
+                                 ..#.....
+                                 ........
+                                 ........".to_mask()
+        );
+        assert_eq!(chip.v[15], 0x00u8);
+
+        chip.assign_vx_nn(0, 64u8 + 0x02)?;
+        chip.assign_vx_nn(1, 32u8 + 0x01)?;
+        chip.assign_vx_nn(2, 0x0E)?;
+        chip.assign_i_addr_of_sprite_vx(2)?;
+        chip.execute(opcode)?;
+        assert_eq_2d!(
+            x_range: 0..8, y_range: 0..8;
+            chip.gfx.to_mask(), "........
+                                 ........
+                                 ........
+                                 ........
+                                 ........
+                                 ...###..
+                                 ........
+                                 ........".to_mask()
+        );
+        assert_eq!(chip.v[15], 0x01u8);
+
+        chip.assign_vx_nn(0, 62u8)?;
+        chip.assign_vx_nn(1, 30u8)?;
+        chip.assign_i_addr_of_sprite_vx(2)?;
+        chip.execute(opcode)?;
+        assert_eq_2d!(
+            x_range: 60..64, y_range: 28..32;
+            chip.gfx.to_mask(), "....
+                                 ....
+                                 ..##
+                                 ..#.".to_mask().offset(60, 28)
+        );
+        assert_eq!(chip.v[15], 0x00u8);
+
+        chip.assign_i_nnn(0x0FFEu16)?;
+        assert_eq!(
+            chip.execute(opcode),
+            Err("Attempted to read memory out of address space"),
+        );
+        Ok(())
     }
 
     /// Skip the following instruction
     /// if the key corresponding to the hex value currently stored in register VX is pressed
     #[test]
-    fn execute_ex9e_skip_if_vx_in_keys() {
+    fn execute_ex9e_skip_if_vx_in_keys() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let pc = chip.pc;
         let opcode = OpCode::_EX9E { x: 0 };
 
-        chip.assign_vx_nn(0, 0x0F).unwrap();
+        chip.assign_vx_nn(0, 0x0F)?;
         chip.update_keys();
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 2);
 
         chip.ctx.set_key(0x0Fu8);
         chip.update_keys();
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 6);
 
-        chip.assign_vx_nn(0, 0xFF).unwrap();
+        chip.assign_vx_nn(0, 0xFF)?;
         chip.update_keys();
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 8);
+        Ok(())
     }
 
     /// Skip the following instruction
     /// if the key corresponding to the hex value currently stored in register VX is not pressed
     #[test]
-    fn execute_exa1_skip_if_vx_not_in_keys() {
+    fn execute_exa1_skip_if_vx_not_in_keys() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let pc = chip.pc;
         let opcode = OpCode::_EXA1 { x: 0 };
 
-        chip.assign_vx_nn(0, 0x0F).unwrap();
+        chip.assign_vx_nn(0, 0x0F)?;
         chip.update_keys();
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 4);
 
         chip.ctx.set_key(0x0Fu8);
         chip.update_keys();
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 6);
 
-        chip.assign_vx_nn(0, 0xFF).unwrap();
+        chip.assign_vx_nn(0, 0xFF)?;
         chip.update_keys();
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 10);
+        Ok(())
     }
 
     /// Store the current value of the delay timer in register VX
     #[test]
-    fn execute_fx07_assign_vx_delay_t() {
+    fn execute_fx07_assign_vx_delay_t() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let opcode = OpCode::_FX07 { x: 0 };
         chip.delay_timer = 0xFFu8;
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.delay_timer, chip.v[0]);
+        Ok(())
     }
 
     /// Wait for a keypress and store the result in register VX
     /// Should trigger on key release
     #[test]
-    fn execute_fx0a_assign_vx_wait_for_key() {
+    fn execute_fx0a_assign_vx_wait_for_key() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let pc = chip.pc;
         let opcode = OpCode::_FX0A { x: 0 };
 
         chip.update_keys();
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc);
         assert_eq!(chip.v[0], 0x00u8);
 
         chip.ctx.set_key(0x0Fu8);
         chip.update_keys();
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc);
         assert_eq!(chip.v[0], 0x00u8);
 
         chip.ctx.reset_key(0x0Fu8);
         chip.update_keys();
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 2);
         assert_eq!(chip.v[0], 0x0Fu8);
 
-        chip.assign_vx_nn(0, 0x00).unwrap();
+        chip.assign_vx_nn(0, 0x00)?;
         chip.update_keys();
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.pc, pc + 2);
         assert_eq!(chip.v[0], 0x00u8);
+        Ok(())
     }
 
     /// Set the delay timer to the value of register VX
     #[test]
-    fn execute_fx15_assign_delay_t_vx() {
+    fn execute_fx15_assign_delay_t_vx() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let opcode = OpCode::_FX15 { x: 0 };
-        chip.assign_vx_nn(0, 0xFFu8);
+        chip.assign_vx_nn(0, 0xFFu8)?;
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.delay_timer, chip.v[0]);
+        Ok(())
     }
 
     /// Set the sound timer to the value of register VX
     #[test]
-    fn execute_fx18_assign_sound_t_vx() {
+    fn execute_fx18_assign_sound_t_vx() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let opcode = OpCode::_FX18 { x: 0 };
-        chip.assign_vx_nn(0, 0xFFu8);
+        chip.assign_vx_nn(0, 0xFFu8)?;
 
-        chip.execute(opcode).unwrap();
+        chip.execute(opcode)?;
         assert_eq!(chip.sound_timer, chip.v[0]);
+        Ok(())
     }
 
     /// Add the value stored in register VX to register I
     #[test]
-    fn execute_fx1e_assign_add_i_vx() {
+    fn execute_fx1e_assign_add_i_vx() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let opcode = OpCode::_FX1E { x: 0 };
 
-        chip.execute(opcode);
+        chip.execute(opcode)?;
         assert_eq!(chip.i, 0x0000u16);
 
-        chip.assign_vx_nn(0, 0xFFu8);
-        chip.execute(opcode);
+        chip.assign_vx_nn(0, 0xFFu8)?;
+        chip.execute(opcode)?;
         assert_eq!(chip.i, 0x00FFu16);
 
-        chip.assign_i_nnn(0x0FFBu16);
+        chip.assign_i_nnn(0x0FFBu16)?;
         assert_eq!(
             chip.execute(opcode),
             Err("Attempted to set i out of address space"),
         );
+        Ok(())
     }
 
     /// Set I to the memory address of the sprite data
     /// corresponding to the hexadecimal digit stored in register VX
     #[test]
-    fn execute_fx29_assign_i_addr_of_sprite_vx() {
+    fn execute_fx29_assign_i_addr_of_sprite_vx() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::try_from(0x0000u16).unwrap();
-        assert!(false)
+        let opcode = OpCode::_FX29 { x: 0 };
+
+        chip.assign_vx_nn(0, 0x00u8)?;
+        chip.execute(opcode)?;
+        assert_eq!(chip.i, 0x50u16);
+
+        chip.assign_vx_nn(0, 0xACu8)?;
+        chip.execute(opcode)?;
+        assert_eq!(chip.i, 0x8Cu16);
+
+        chip.assign_vx_nn(0, 0xB7u8)?;
+        chip.execute(opcode)?;
+        assert_eq!(chip.i, 0x73u16);
+        Ok(())
     }
 
     /// Store the binary-coded decimal equivalent of the value
     /// stored in register VX at addresses I, I+1, and I+2
     #[test]
-    fn execute_fx33_assign_mem_at_i_bcd_of_vx() {
+    fn execute_fx33_assign_mem_at_i_bcd_of_vx() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let opcode = OpCode::_FX33 { x: 0 };
 
-        chip.execute(opcode);
+        chip.execute(opcode)?;
         assert_eq!(
             &chip.memory[chip.i as usize..=(chip.i + 2) as usize],
             &[0, 0, 0],
         );
 
-        chip.assign_vx_nn(0, 0xFFu8);
-        chip.execute(opcode);
+        chip.assign_vx_nn(0, 0xFFu8)?;
+        chip.execute(opcode)?;
         assert_eq!(
             &chip.memory[chip.i as usize..=(chip.i + 2) as usize],
             &[2, 5, 5],
         );
 
-        chip.assign_i_nnn(0x0FFEu16);
+        chip.assign_i_nnn(0x0FFEu16)?;
         assert_eq!(
             chip.execute(opcode),
             Err("Attempted to set memory out of address space"),
         );
+        Ok(())
     }
 
     /// Store the values of registers V0 to VX inclusive in memory
     /// starting at address I, I is set to I + X + 1 after operation
     #[test]
-    fn execute_fx55_assign_mem_at_i_v0_to_vx() {
+    fn execute_fx55_assign_mem_at_i_v0_to_vx() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
 
-        chip.assign_vx_nn(0, 0xDEu8);
-        chip.assign_vx_nn(1, 0xADu8);
-        chip.assign_vx_nn(2, 0xBEu8);
-        chip.assign_vx_nn(3, 0xEFu8);
+        chip.assign_vx_nn(0, 0xDEu8)?;
+        chip.assign_vx_nn(1, 0xADu8)?;
+        chip.assign_vx_nn(2, 0xBEu8)?;
+        chip.assign_vx_nn(3, 0xEFu8)?;
 
         let opcode = OpCode::_FX55 { x: 0 };
-        chip.execute(opcode);
+        chip.execute(opcode)?;
         assert_eq!(chip.memory[(chip.i - 1) as usize], 0xDEu8);
         assert_eq!(chip.i, 0x0001u16);
 
         let opcode = OpCode::_FX55 { x: 3 };
-        chip.execute(opcode);
+        chip.execute(opcode)?;
         assert_eq!(
             &chip.memory[(chip.i - 4) as usize..chip.i as usize],
             &[0xDE, 0xAD, 0xBE, 0xEF],
@@ -1214,17 +1434,18 @@ mod opcodes_execution_tests {
         assert_eq!(chip.i, 0x0005u16);
 
         let opcode = OpCode::_FX55 { x: 0x0Fu8 };
-        chip.assign_i_nnn(0x0FF1u16);
+        chip.assign_i_nnn(0x0FF1u16)?;
         assert_eq!(
             chip.execute(opcode),
             Err("Attempted to store data out of address space"),
         );
+        Ok(())
     }
 
     /// Fill registers V0 to VX inclusive with the values stored in memory
     /// starting at address I, I is set to I + X + 1 after operation
     #[test]
-    fn execute_fx65_assign_v0_to_vx_mem_at_i() {
+    fn execute_fx65_assign_v0_to_vx_mem_at_i() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
 
         chip.memory[chip.i as usize] = 0xDEu8;
@@ -1233,7 +1454,7 @@ mod opcodes_execution_tests {
         chip.memory[(chip.i + 3) as usize] = 0xEFu8;
 
         let opcode = OpCode::_FX65 { x: 3 };
-        chip.execute(opcode);
+        chip.execute(opcode)?;
         assert_eq!(chip.v[0], 0xDEu8);
         assert_eq!(chip.v[1], 0xADu8);
         assert_eq!(chip.v[2], 0xBEu8);
@@ -1241,10 +1462,11 @@ mod opcodes_execution_tests {
         assert_eq!(chip.i, 0x0004u16);
 
         let opcode = OpCode::_FX65 { x: 0x0Fu8 };
-        chip.assign_i_nnn(0x0FF1u16);
+        chip.assign_i_nnn(0x0FF1u16)?;
         assert_eq!(
             chip.execute(opcode),
             Err("Attempted to load memory out of address space"),
         );
+        Ok(())
     }
 }

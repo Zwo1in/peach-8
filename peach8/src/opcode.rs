@@ -9,10 +9,11 @@ use log::{debug, error, info, trace, warn};
 ///
 /// Examples:
 /// ```
+/// use core::convert::TryInto;
 /// use peach8::opcode::OpCode;
 ///
-/// let instruction = 0x0ABC;
-/// let opcode = OpCode::from(instruction);
+/// let instruction = 0x0ABCu16;
+/// let opcode: OpCode = instruction.try_into().unwrap();
 ///
 /// assert_eq!(
 ///     opcode,

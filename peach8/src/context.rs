@@ -11,71 +11,10 @@ pub trait Context {
 pub mod testing {
     use super::*;
 
-    use core::fmt;
-
-    use embedded_graphics::drawable::Pixel;
     use embedded_graphics::image::IntoPixelIter;
     use nanorand::{rand::pcg64::Pcg64 as Rng, RNG};
 
-    #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-    pub struct ImageMask([[bool; 64]; 32]);
-
-    impl ImageMask {
-        fn new() -> Self {
-            Self([[false; 64]; 32])
-        }
-    }
-
-    impl fmt::Debug for ImageMask {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "\n").and(
-                self.0
-                    .iter()
-                    .map(|&row| {
-                        row.iter()
-                            .map(|&p| if p { write!(f, ".") } else { write!(f, " ") })
-                            .fold(Ok(()), |acc, r| acc.and(r))
-                            .and(write!(f, "\n"))
-                    })
-                    .fold(Ok(()), |acc, r| acc.and(r)),
-            )
-        }
-    }
-
-    pub trait ToMask {
-        fn to_mask(&self) -> ImageMask;
-    }
-
-    impl ToMask for str {
-        fn to_mask(&self) -> ImageMask {
-            let mut mask = ImageMask::new();
-            mask.0
-                .iter_mut()
-                .zip(self.split_whitespace())
-                .for_each(|(m_row, c_row)| {
-                    m_row
-                        .iter_mut()
-                        .zip(c_row.chars())
-                        .for_each(|(m, c)| *m = if c == ' ' { false } else { true })
-                });
-            mask
-        }
-    }
-
-    impl<I> ToMask for I
-    where
-        I: Iterator<Item = Pixel<BinaryColor>> + Clone,
-    {
-        fn to_mask(&self) -> ImageMask {
-            let mut mask = ImageMask::new();
-            self.clone().for_each(|Pixel(point, color)| {
-                if color == BinaryColor::On {
-                    mask.0[point.y as usize][point.x as usize] = true;
-                }
-            });
-            mask
-        }
-    }
+    use crate::utils::testing::{ImageMask, ToMask};
 
     pub struct TestingContext {
         sound: bool,
@@ -127,26 +66,6 @@ pub mod testing {
         fn get_keys(&mut self) -> &[bool; 16] {
             &self.keys
         }
-    }
-
-    #[test]
-    fn to_image_mask() {
-        let mask = ImageMask::new();
-
-        let empty_mask_str = include_str!("../test-data/context/empty_mask");
-        let full_mask_str = include_str!("../test-data/context/full_mask");
-
-        let empty_mask_data: &[u8] = &[0; 8 * 32];
-        let full_mask_data: &[u8] = &[255; 8 * 32];
-
-        let empty_image: ImageRaw<BinaryColor> = ImageRaw::new(empty_mask_data, 64, 32);
-        let full_image: ImageRaw<BinaryColor> = ImageRaw::new(full_mask_data, 64, 32);
-
-        assert_eq!(mask, empty_image.pixel_iter().to_mask());
-
-        assert_eq!(empty_mask_str.to_mask(), empty_image.pixel_iter().to_mask());
-
-        assert_eq!(full_mask_str.to_mask(), full_image.pixel_iter().to_mask());
     }
 
     #[test]
