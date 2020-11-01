@@ -291,17 +291,25 @@ impl<C: Context + Sized> Peach8<C> {
     /// Jump to address NNN
     /// 1NNN { nnn: u16 },
     fn jump_to(&mut self, nnn: u16) -> Result<(), &'static str> {
-        self.pc = nnn;
-        Ok(())
+        if nnn < 0x200u16 {
+            Err("Attempted to jump out of program's address space")
+        } else {
+            self.pc = nnn;
+            Ok(())
+        }
     }
 
     /// Execute subroutine starting at address NNN
     /// 2NNN { nnn: u16 },
     fn exec_subroutine_at(&mut self, nnn: u16) -> Result<(), &'static str> {
-        self.stack
-            .push(self.pc)
-            .or(Err("Cannot enter subroutine, stack is full"))
-            .map(|_| self.pc = nnn)
+        if nnn < 0x200u16 {
+            Err("Attempted to jump out of program's address space")
+        } else {
+            self.stack
+                .push(self.pc)
+                .or(Err("Cannot enter subroutine, stack is full"))
+                .map(|_| self.pc = nnn)
+        }
     }
 
     /// Skip the following instruction if the value of register VX equals NN
@@ -446,7 +454,9 @@ impl<C: Context + Sized> Peach8<C> {
     /// BNNN { nnn: u16 },
     fn jump_to_nnn_add_v0(&mut self, nnn: u16) -> Result<(), &'static str> {
         let addr = nnn + self.v[0] as u16;
-        if addr <= 0x0FFFu16 {
+        if addr < 0x0200u16 {
+            Err("Attempted to jump out of program's address space")
+        } else if addr <= 0x0FFFu16 {
             self.pc = addr;
             Ok(())
         } else {
@@ -768,12 +778,12 @@ mod opcodes_execution_tests {
     fn execute_00ee_subroutine_return() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let opcode = OpCode::try_from(0x00EEu16)?;
-        let jumps = [0x260u16, 0x7F1u16, 0xFA2u16, 0x000u16];
+        let jumps = [0x260u16, 0x7F1u16, 0xFA2u16, 0x333u16];
         jumps
             .iter()
             .map(|&addr| OpCode::_2NNN { nnn: addr })
             .for_each(|op| chip.execute(op).unwrap());
-        assert_eq!(chip.pc, 0x000u16);
+        assert_eq!(chip.pc, 0x333u16);
 
         for &addr in jumps.iter().rev().skip(1) {
             chip.execute(opcode)?;
@@ -797,8 +807,10 @@ mod opcodes_execution_tests {
         chip.execute(opcode)?;
         assert_eq!(chip.pc, 0xFFFu16);
         let opcode = OpCode::try_from(0x1000u16)?;
-        chip.execute(opcode)?;
-        assert_eq!(chip.pc, 0x000u16);
+        assert_eq!(
+            chip.execute(opcode),
+            Err("Attempted to jump out of program's address space"),
+        );
         Ok(())
     }
 
@@ -820,6 +832,13 @@ mod opcodes_execution_tests {
             chip.execute(opcode),
             Err("Cannot enter subroutine, stack is full"),
         );
+
+        chip.stack.clear();
+        assert_eq!(
+            chip.execute(OpCode::_2NNN { nnn: 0x100u16 }),
+            Err("Attempted to jump out of program's address space"),
+        );
+
         Ok(())
     }
 
@@ -1143,13 +1162,19 @@ mod opcodes_execution_tests {
             chip.execute(opcode),
             Err("Attempted to set pc out of address space"),
         );
+
+        let opcode = OpCode::try_from(0xB000u16)?;
+        assert_eq!(
+            chip.execute(opcode),
+            Err("Attempted to jump out of program's address space"),
+        );
         Ok(())
     }
 
     /// Set VX to a random number with a mask of NN
     #[test]
     fn execute_cxnn_assign_vx_random_and_nn() -> Result<(), &'static str> {
-        // Not testing this opcode currently
+        // Not testing this opcode currently, tested in test roms
         assert!(true);
         Ok(())
     }
