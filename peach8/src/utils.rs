@@ -6,6 +6,8 @@ pub mod testing {
     use bitvec::prelude::*;
     use embedded_graphics::{drawable::Pixel, pixelcolor::BinaryColor};
 
+    use crate::peach::{WIDTH, HEIGHT};
+
     #[macro_export]
     macro_rules! assert_eq_2d {
         (x_range: $xrange:expr, y_range: $yrange:expr; $lhs:expr, $rhs:expr $(,)?) => {{
@@ -18,11 +20,11 @@ pub mod testing {
     }
 
     #[derive(Copy, Clone, PartialEq, Eq, Hash)]
-    pub struct ImageMask([[bool; 64]; 32]);
+    pub struct ImageMask([[bool; WIDTH]; HEIGHT]);
 
     impl ImageMask {
         pub fn new() -> Self {
-            Self([[false; 64]; 32])
+            Self([[false; WIDTH]; HEIGHT])
         }
 
         pub fn offset(&mut self, xoffset: usize, yoffset: usize) -> &Self {
@@ -151,11 +153,11 @@ pub mod testing {
             let empty_mask_str = include_str!("../test-data/context/empty_mask");
             let full_mask_str = include_str!("../test-data/context/full_mask");
 
-            let empty_mask_data: &[u8] = &[0; 8 * 32];
-            let full_mask_data: &[u8] = &[255; 8 * 32];
+            let empty_mask_data: &[u8] = &[0; 8 * HEIGHT];
+            let full_mask_data: &[u8] = &[255; 8 * HEIGHT];
 
-            let empty_image: ImageRaw<BinaryColor> = ImageRaw::new(empty_mask_data, 64, 32);
-            let full_image: ImageRaw<BinaryColor> = ImageRaw::new(full_mask_data, 64, 32);
+            let empty_image: ImageRaw<BinaryColor> = ImageRaw::new(empty_mask_data, WIDTH as u32, HEIGHT as u32);
+            let full_image: ImageRaw<BinaryColor> = ImageRaw::new(full_mask_data, WIDTH as u32, HEIGHT as u32);
 
             assert_eq!(mask, empty_image.pixel_iter().to_mask());
             assert_eq!(empty_mask_str.to_mask(), empty_image.pixel_iter().to_mask());

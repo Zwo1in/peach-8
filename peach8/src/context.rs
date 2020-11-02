@@ -2,7 +2,8 @@ use embedded_graphics::{image::ImageRaw, pixelcolor::BinaryColor};
 
 pub trait Context {
     fn on_frame<'a>(&mut self, frame: ImageRaw<'a, BinaryColor>);
-    fn on_sound(&mut self);
+    fn sound_on(&mut self);
+    fn sound_off(&mut self);
     fn get_keys(&mut self) -> &[bool; 16];
     fn gen_random(&mut self) -> u8;
 }
@@ -55,8 +56,12 @@ pub mod testing {
             self.frame = Some(frame.pixel_iter().to_mask());
         }
 
-        fn on_sound(&mut self) {
+        fn sound_on(&mut self) {
             self.sound = true;
+        }
+
+        fn sound_off(&mut self) {
+            self.sound = false;
         }
 
         fn gen_random(&mut self) -> u8 {
@@ -80,8 +85,11 @@ pub mod testing {
         assert!(ctx.frame.is_some());
         assert_eq!(ctx.frame.unwrap(), full_mask_str.to_mask());
 
-        ctx.on_sound();
+        ctx.sound_on();
         assert!(ctx.is_sound_on());
+
+        ctx.sound_off();
+        assert!(!ctx.is_sound_on());
 
         ctx.set_key(0x01u8);
         ctx.set_key(0x0Fu8);

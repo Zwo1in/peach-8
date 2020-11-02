@@ -1,12 +1,24 @@
 #![allow(unused)]
 
-use core::convert::Infallible;
+use core::convert::{Infallible, TryInto};
 
 use bitvec::prelude::*;
 use heapless::{consts::U64, Vec};
 
 use crate::context::Context;
 use crate::opcode::OpCode;
+
+use crate::timer::TimerState;
+#[cfg(feature="atomic")]
+use crate::timer::atomic::Timer;
+#[cfg(not(feature="atomic"))]
+use crate::timer::racy::Timer;
+
+pub(crate) const WIDTH: usize = 64;
+pub(crate) const HEIGHT: usize = 32;
+const MEM_LENGTH: usize = 4096;
+const START_ADDR: u16 = 0x200;
+const FONTSET_ADDR: u16 = 0x050;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum KeyState {
@@ -34,32 +46,32 @@ pub struct Peach8<C: Context + Sized> {
     v: [u8; 16],
     i: u16,
     pc: u16,
-    gfx: [BitArray<Msb0, [u32; 2]>; 32],
+    gfx: [BitArray<Msb0, [u8; 8]>; HEIGHT],
     keys: [KeyState; 16],
     stack: Vec<u16, U64>,
-    memory: [u8; 4096],
-    delay_timer: u8,
-    sound_timer: u8,
+    memory: [u8; MEM_LENGTH],
+    delay_timer: Timer,
+    sound_timer: Timer,
 }
 
 impl<C: Context + Sized> Peach8<C> {
-    pub fn new(ctx: C) -> Self {
+    fn new(ctx: C) -> Self {
         Self {
             ctx,
             v: [0; 16],
             i: 0,
-            pc: 0x200,
-            gfx: [BitArray::zeroed(); 32],
+            pc: START_ADDR,
+            gfx: [BitArray::zeroed(); HEIGHT],
             keys: [KeyState::Up; 16],
             stack: Vec::new(),
-            memory: [0; 4096],
-            delay_timer: 0,
-            sound_timer: 0,
+            memory: [0; MEM_LENGTH],
+            delay_timer: Timer::new(),
+            sound_timer: Timer::new(),
         }
     }
 
     /// Load program from slice of bytes to memory from 0x200 (_start address)
-    pub fn load(&mut self, prog: &[u8]) {
+    pub fn load(ctx: C, prog: &[u8]) -> Self {
         let fontset: &[u8] = &[
             0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
             0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -78,18 +90,20 @@ impl<C: Context + Sized> Peach8<C> {
             0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
             0xF0, 0x80, 0xF0, 0x80, 0x80, // F
         ];
-        self.memory[0x50..]
+        let mut chip = Self::new(ctx);
+        chip.memory[FONTSET_ADDR as usize..]
             .iter_mut()
             .zip(fontset)
             .for_each(|(mem, &data)| *mem = data);
-        self.memory[0x200..]
+        chip.memory[START_ADDR as usize..]
             .iter_mut()
             .zip(prog)
             .for_each(|(mem, &data)| *mem = data);
+        chip
     }
 
     fn pc_increment(&mut self) -> Result<(), &'static str> {
-        if self.pc < 0x0FFEu16 {
+        if self.pc <= (MEM_LENGTH - 2) as u16 {
             self.pc += 2;
             Ok(())
         } else {
@@ -107,14 +121,37 @@ impl<C: Context + Sized> Peach8<C> {
             });
     }
 
-    fn tick_timers(&mut self) -> nb::Result<(), Infallible> {
-        Ok(())
+    fn read_opcode(&self) -> Result<OpCode, &'static str> {
+        if self.pc <= (MEM_LENGTH - 2) as u16 {
+            let mut opcode: u16 = 0;
+            opcode |= (self.memory[self.pc as usize] as u16) << 8;
+            opcode |= self.memory[(self.pc + 1) as usize] as u16;
+            opcode.try_into()
+        } else {
+            Err("Attempted to read memory out of address space")
+        }
     }
 
-    fn tick_chip(&mut self) -> nb::Result<(), Infallible> {
-        Ok(())
+    fn tick_timers(&mut self) {
+        self.delay_timer.decrement();
+        match self.sound_timer.decrement() {
+            TimerState::On => self.ctx.sound_on(),
+            TimerState::Off => self.ctx.sound_off(),
+            TimerState::Finished => (),
+        }
+    }
+
+    fn tick_chip(&mut self) -> Result<(), &'static str> {
+        self.update_keys();
+        self.read_opcode()
+            .and_then(|op| self.execute(op))
+            //.and(self.ctx.on_frame(
+            //        self.gfx.
     }
 }
+
+#[cfg(feature="atomic")]
+unsafe impl<C: Context + Sized + Sync> core::marker::Sync for Peach8<C> {}
 
 #[cfg(test)]
 mod tests {
@@ -124,12 +161,12 @@ mod tests {
     #[test]
     fn pc_incrementation() {
         let mut chip = Peach8::new(TestingContext::new(0));
-        assert_eq!(chip.pc, 0x0200u16);
+        assert_eq!(chip.pc, START_ADDR);
         chip.pc_increment().unwrap();
-        assert_eq!(chip.pc, 0x0202u16);
+        assert_eq!(chip.pc, START_ADDR + 2);
         chip.pc_increment().unwrap();
-        assert_eq!(chip.pc, 0x0204u16);
-        chip.pc = 0x0FFEu16;
+        assert_eq!(chip.pc, START_ADDR + 4);
+        chip.pc = (MEM_LENGTH - 1) as u16;
         assert_eq!(
             chip.pc_increment(),
             Err("Attempted to increment pc out of address space")
@@ -184,6 +221,48 @@ mod tests {
         assert_eq!(chip.keys[0x0Fusize], KeyState::Up);
         assert_eq!(chip.keys[0x02usize], KeyState::Released);
     }
+
+    #[test]
+    fn timers_tick() -> Result<(), &'static str> {
+        let mut chip = Peach8::new(TestingContext::new(0));
+        chip.assign_vx_nn(0, 101)?;
+        chip.assign_delay_t_vx(0)?;
+        chip.assign_sound_t_vx(0)?;
+        assert!(!chip.ctx.is_sound_on());
+
+        chip.tick_timers();
+        assert!(chip.ctx.is_sound_on());
+
+        for _ in 0..100 { chip.tick_timers(); }
+        assert!(chip.ctx.is_sound_on());
+        assert_eq!(chip.delay_timer.load(), 0);
+        assert_eq!(chip.sound_timer.load(), 0);
+
+        chip.tick_timers();
+        assert!(!chip.ctx.is_sound_on());
+
+        Ok(())
+    }
+
+    #[test]
+    fn read_opcode() -> Result<(), &'static str> {
+        let mut chip = Peach8::load(
+            TestingContext::new(0),
+            &[0x14u8, 0x65u8],
+        );
+        let opcode = chip.read_opcode()?;
+        assert_eq!(
+            opcode,
+            OpCode::_1NNN { nnn: 0x465u16 },
+        );
+
+        chip.pc = (MEM_LENGTH - 1) as u16;
+        assert_eq!(
+            chip.read_opcode(),
+            Err("Attempted to read memory out of address space"),
+        );
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -216,9 +295,8 @@ mod rom_tests {
     #[ignore]
     #[test]
     fn rom_skosulor_c8int() {
-        let mut chip = Peach8::new(TestingContext::new(0));
         let rom = include_bytes!("../test-data/skosulor_c8int/test.c8");
-        chip.load(&rom[..]);
+        Peach8::load(TestingContext::new(0), &rom[..]);
     }
 }
 
@@ -291,7 +369,7 @@ impl<C: Context + Sized> Peach8<C> {
     /// Jump to address NNN
     /// 1NNN { nnn: u16 },
     fn jump_to(&mut self, nnn: u16) -> Result<(), &'static str> {
-        if nnn < 0x200u16 {
+        if nnn < START_ADDR {
             Err("Attempted to jump out of program's address space")
         } else {
             self.pc = nnn;
@@ -302,7 +380,7 @@ impl<C: Context + Sized> Peach8<C> {
     /// Execute subroutine starting at address NNN
     /// 2NNN { nnn: u16 },
     fn exec_subroutine_at(&mut self, nnn: u16) -> Result<(), &'static str> {
-        if nnn < 0x200u16 {
+        if nnn < START_ADDR {
             Err("Attempted to jump out of program's address space")
         } else {
             self.stack
@@ -454,9 +532,9 @@ impl<C: Context + Sized> Peach8<C> {
     /// BNNN { nnn: u16 },
     fn jump_to_nnn_add_v0(&mut self, nnn: u16) -> Result<(), &'static str> {
         let addr = nnn + self.v[0] as u16;
-        if addr < 0x0200u16 {
+        if addr < START_ADDR {
             Err("Attempted to jump out of program's address space")
-        } else if addr <= 0x0FFFu16 {
+        } else if addr <= MEM_LENGTH as u16 {
             self.pc = addr;
             Ok(())
         } else {
@@ -529,7 +607,7 @@ impl<C: Context + Sized> Peach8<C> {
     /// Store the current value of the delay timer in register VX
     /// FX07 { x: u8 },
     fn assign_vx_delay_t(&mut self, x: u8) -> Result<(), &'static str> {
-        self.v[x as usize] = self.delay_timer;
+        self.v[x as usize] = self.delay_timer.load();
         Ok(())
     }
 
@@ -555,14 +633,14 @@ impl<C: Context + Sized> Peach8<C> {
     /// Set the delay timer to the value of register VX
     /// FX15 { x: u8 },
     fn assign_delay_t_vx(&mut self, x: u8) -> Result<(), &'static str> {
-        self.delay_timer = self.v[x as usize];
+        self.delay_timer.store(self.v[x as usize]);
         Ok(())
     }
 
     /// Set the sound timer to the value of register VX
     /// FX18 { x: u8 },
     fn assign_sound_t_vx(&mut self, x: u8) -> Result<(), &'static str> {
-        self.sound_timer = self.v[x as usize];
+        self.sound_timer.store(self.v[x as usize]);
         Ok(())
     }
 
@@ -570,7 +648,7 @@ impl<C: Context + Sized> Peach8<C> {
     /// FX1E { x: u8 },
     fn assign_add_i_vx(&mut self, x: u8) -> Result<(), &'static str> {
         let addr = self.i + self.v[0] as u16;
-        if addr <= 0x0FFFu16 {
+        if addr <= MEM_LENGTH as u16 {
             self.i = addr;
             Ok(())
         } else {
@@ -582,7 +660,7 @@ impl<C: Context + Sized> Peach8<C> {
     /// FX29 { x: u8 },
     fn assign_i_addr_of_sprite_vx(&mut self, x: u8) -> Result<(), &'static str> {
         let value = (self.v[x as usize] % 16) as u16;
-        self.i = 0x50u16 + value * 5;
+        self.i = FONTSET_ADDR + value * 5;
         Ok(())
     }
 
@@ -711,7 +789,7 @@ mod opcodes_execution_tests {
             assert_eq!(chip.pc, 0x0AAAu16);
         }
 
-        chip.pc = 0x200;
+        chip.pc = START_ADDR;
         chip.exec_subroutine_at(0x0BBB)?;
         chip.execute(return_subr_opcode.try_into()?)?;
         assert_eq!(chip.pc, 0x202);
@@ -743,10 +821,9 @@ mod opcodes_execution_tests {
     /// Clear the screen
     #[test]
     fn execute_00e0_clear_screen() -> Result<(), &'static str> {
-        let mut chip = Peach8::new(TestingContext::new(0));
+        let mut chip = Peach8::load(TestingContext::new(0), &[]);
         let opcode = OpCode::_00E0;
         let empty_mask_str = include_str!("../test-data/context/empty_mask");
-        chip.load(&[]);
 
         assert_eq_2d!(
             x_range: .., y_range: ..;
@@ -805,7 +882,7 @@ mod opcodes_execution_tests {
         assert_eq!(chip.pc, 0x220u16);
         let opcode = OpCode::try_from(0x1FFFu16)?;
         chip.execute(opcode)?;
-        assert_eq!(chip.pc, 0xFFFu16);
+        assert_eq!(chip.pc, MEM_LENGTH as u16 - 1);
         let opcode = OpCode::try_from(0x1000u16)?;
         assert_eq!(
             chip.execute(opcode),
@@ -823,7 +900,7 @@ mod opcodes_execution_tests {
         chip.execute(opcode)?;
         assert_eq!(chip.pc, subr_addr);
         assert_eq!(chip.stack.len(), 1);
-        assert_eq!(chip.stack.pop().unwrap(), 0x200u16);
+        assert_eq!(chip.stack.pop().unwrap(), START_ADDR);
 
         for _ in 0..64 {
             chip.execute(opcode)?;
@@ -1136,10 +1213,10 @@ mod opcodes_execution_tests {
     #[test]
     fn execute_annn_assign_i_nnn() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::_ANNN { nnn: 0x0FFFu16 };
+        let opcode = OpCode::_ANNN { nnn: MEM_LENGTH as u16 - 1 };
         assert_eq!(chip.i, 0x0000u16);
         chip.execute(opcode)?;
-        assert_eq!(chip.i, 0x0FFFu16);
+        assert_eq!(chip.i, MEM_LENGTH as u16 - 1);
         Ok(())
     }
 
@@ -1155,7 +1232,7 @@ mod opcodes_execution_tests {
         chip.assign_vx_nn(0, 0xFFu8)?;
         let opcode = OpCode::try_from(0xBF00u16)?;
         chip.execute(opcode)?;
-        assert_eq!(chip.pc, 0xFFFu16);
+        assert_eq!(chip.pc, MEM_LENGTH as u16 - 1);
 
         let opcode = OpCode::try_from(0xBFFBu16)?;
         assert_eq!(
@@ -1184,8 +1261,7 @@ mod opcodes_execution_tests {
     #[rustfmt::skip]
     #[test]
     fn execute_dxyn_draw_n_at_vx_vy() -> Result<(), &'static str> {
-        let mut chip = Peach8::new(TestingContext::new(0));
-        chip.load(&[]);
+        let mut chip = Peach8::load(TestingContext::new(0), &[]);
         let opcode = OpCode::_DXYN { x: 0, y: 1, n: 5 };
 
         chip.assign_vx_nn(0, 0x02)?;
@@ -1300,10 +1376,10 @@ mod opcodes_execution_tests {
     fn execute_fx07_assign_vx_delay_t() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
         let opcode = OpCode::_FX07 { x: 0 };
-        chip.delay_timer = 0xFFu8;
+        chip.delay_timer.store(0xFFu8);
 
         chip.execute(opcode)?;
-        assert_eq!(chip.delay_timer, chip.v[0]);
+        assert_eq!(chip.delay_timer.load(), chip.v[0]);
         Ok(())
     }
 
@@ -1348,7 +1424,7 @@ mod opcodes_execution_tests {
         chip.assign_vx_nn(0, 0xFFu8)?;
 
         chip.execute(opcode)?;
-        assert_eq!(chip.delay_timer, chip.v[0]);
+        assert_eq!(chip.delay_timer.load(), chip.v[0]);
         Ok(())
     }
 
@@ -1360,7 +1436,7 @@ mod opcodes_execution_tests {
         chip.assign_vx_nn(0, 0xFFu8)?;
 
         chip.execute(opcode)?;
-        assert_eq!(chip.sound_timer, chip.v[0]);
+        assert_eq!(chip.sound_timer.load(), chip.v[0]);
         Ok(())
     }
 
@@ -1394,15 +1470,15 @@ mod opcodes_execution_tests {
 
         chip.assign_vx_nn(0, 0x00u8)?;
         chip.execute(opcode)?;
-        assert_eq!(chip.i, 0x50u16);
+        assert_eq!(chip.i, FONTSET_ADDR);
 
         chip.assign_vx_nn(0, 0xACu8)?;
         chip.execute(opcode)?;
-        assert_eq!(chip.i, 0x8Cu16);
+        assert_eq!(chip.i, FONTSET_ADDR + 0xC * 5);
 
         chip.assign_vx_nn(0, 0xB7u8)?;
         chip.execute(opcode)?;
-        assert_eq!(chip.i, 0x73u16);
+        assert_eq!(chip.i, FONTSET_ADDR + 0x7 * 5);
         Ok(())
     }
 
@@ -1426,7 +1502,7 @@ mod opcodes_execution_tests {
             &[2, 5, 5],
         );
 
-        chip.assign_i_nnn(0x0FFEu16)?;
+        chip.assign_i_nnn((MEM_LENGTH - 1) as u16)?;
         assert_eq!(
             chip.execute(opcode),
             Err("Attempted to set memory out of address space"),

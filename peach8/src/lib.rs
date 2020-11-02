@@ -2,7 +2,8 @@
 pub mod context;
 pub mod opcode;
 pub mod peach;
-pub mod utils;
+pub(crate) mod utils;
+pub(crate) mod timer;
 
 pub use opcode::OpCode;
 pub use peach::Peach8;
