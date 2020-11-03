@@ -3,19 +3,18 @@
 use core::convert::{Infallible, TryInto};
 
 use bitvec::prelude::*;
+use embedded_graphics::image::ImageRaw;
 use heapless::{consts::U64, Vec};
 
 use crate::context::Context;
 use crate::opcode::OpCode;
-
+use crate::gfx::{Gfx, HEIGHT, WIDTH};
 use crate::timer::TimerState;
 #[cfg(feature="atomic")]
 use crate::timer::atomic::Timer;
 #[cfg(not(feature="atomic"))]
 use crate::timer::racy::Timer;
 
-pub(crate) const WIDTH: usize = 64;
-pub(crate) const HEIGHT: usize = 32;
 const MEM_LENGTH: usize = 4096;
 const START_ADDR: u16 = 0x200;
 const FONTSET_ADDR: u16 = 0x050;
@@ -46,7 +45,7 @@ pub struct Peach8<C: Context + Sized> {
     v: [u8; 16],
     i: u16,
     pc: u16,
-    gfx: [BitArray<Msb0, [u8; 8]>; HEIGHT],
+    gfx: Gfx,
     keys: [KeyState; 16],
     stack: Vec<u16, U64>,
     memory: [u8; MEM_LENGTH],
@@ -61,7 +60,7 @@ impl<C: Context + Sized> Peach8<C> {
             v: [0; 16],
             i: 0,
             pc: START_ADDR,
-            gfx: [BitArray::zeroed(); HEIGHT],
+            gfx: Gfx::new(),
             keys: [KeyState::Up; 16],
             stack: Vec::new(),
             memory: [0; MEM_LENGTH],
@@ -145,8 +144,10 @@ impl<C: Context + Sized> Peach8<C> {
         self.update_keys();
         self.read_opcode()
             .and_then(|op| self.execute(op))
-            //.and(self.ctx.on_frame(
-            //        self.gfx.
+            .and(Ok(self.ctx.on_frame(
+                ImageRaw::new(self.gfx.as_raw(), WIDTH as u32, HEIGHT as u32)
+            )))
+            .map(|_| ())
     }
 }
 
@@ -353,7 +354,7 @@ impl<C: Context + Sized> Peach8<C> {
     /// Clear the screen
     /// 00E0,
     fn clear_screen(&mut self) -> Result<(), &'static str> {
-        self.gfx = [BitArray::zeroed(); 32];
+        self.gfx = Gfx::new();
         Ok(())
     }
 
@@ -553,27 +554,27 @@ impl<C: Context + Sized> Peach8<C> {
     /// Draw a sprite at position VX, VY with N bytes of sprite data starting at the address stored in I, Set VF to 01 if any set pixels are changed to unset, and 00 otherwise
     /// DXYN { x: u8, y: u8, n: u8 },
     fn draw_n_at_vx_vy(&mut self, x: u8, y: u8, n: u8) -> Result<(), &'static str> {
-        if self.i + n as u16 > self.memory.len() as u16 {
+        if self.i + n as u16 >= MEM_LENGTH as u16 {
             return Err("Attempted to read memory out of address space");
         }
 
-        let x = self.v[x as usize] as usize % self.gfx[0].len();
-        let y = self.v[y as usize] as usize % self.gfx.len();
-        let x_stop = core::cmp::min(x + n as usize, self.gfx[0].len()) as usize;
-        let y_stop = core::cmp::min(y + n as usize, self.gfx.len()) as usize;
+        let x = self.v[x as usize] as usize % WIDTH;
+        let y = self.v[y as usize] as usize % HEIGHT;
+        let x_stop = core::cmp::min(x + 8 as usize, WIDTH);
+        let y_stop = core::cmp::min(y + n as usize, HEIGHT);
 
         let mut collision = false;
-        for n in y..y_stop {
-            let row = BitSlice::<Msb0, _>::from_element(&self.memory[self.i as usize + n - y]);
-            self.gfx[n][x..x_stop]
-                .iter_mut()
-                .zip(row)
-                .for_each(|(mut lhs, rhs)| {
-                    if *lhs && *rhs {
-                        collision = true;
-                    }
-                    *lhs = *lhs ^ rhs;
-                });
+        for x_idx in x..x_stop {
+            for y_idx in y..y_stop {
+                let row = BitSlice::<Msb0, _>::from_element(
+                    &self.memory[self.i as usize + y_idx - y]);
+                let to_draw = *row.get(x_idx - x).unwrap();
+                let curr_bit = *self.gfx.get_bit(x_idx, y_idx).unwrap();
+                if to_draw && to_draw == curr_bit {
+                    collision = true;
+                }
+                self.gfx.xor_bit(x_idx, y_idx, to_draw)?;
+            }
         }
 
         self.v[15] = if collision { 0x01u8 } else { 0x00u8 };

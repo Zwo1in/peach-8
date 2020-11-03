@@ -3,10 +3,9 @@ pub mod testing {
     use core::fmt;
     use core::ops::RangeBounds;
 
-    use bitvec::prelude::*;
     use embedded_graphics::{drawable::Pixel, pixelcolor::BinaryColor};
 
-    use crate::peach::{WIDTH, HEIGHT};
+    use crate::gfx::{Gfx, WIDTH, HEIGHT};
 
     #[macro_export]
     macro_rules! assert_eq_2d {
@@ -65,18 +64,13 @@ pub mod testing {
                 write!(f, "-")?;
             }
             write!(f, "\n")?;
-            self.0
-                .iter()
-                .map(|&row| {
-                    write!(f, "|")
-                        .and(
-                            row.iter()
-                                .map(|&p| if p { write!(f, ".") } else { write!(f, " ") })
-                                .fold(Ok(()), |acc, r| acc.and(r)),
-                        )
-                        .and(write!(f, "|\n"))
-                })
-                .fold(Ok(()), |acc, r| acc.and(r))?;
+            for row in &self.0 {
+                write!(f, "|")?;
+                row.iter()
+                    .map(|&p| if p { write!(f, ".") } else { write!(f, " ") })
+                    .fold(Ok(()), |acc, r| acc.and(r))?;
+                write!(f, "|\n")?;
+            }
             for _ in 0..width {
                 write!(f, "-")?;
             }
@@ -119,21 +113,16 @@ pub mod testing {
         }
     }
 
-    impl<O, V> ToMask for [BitArray<O, V>]
-    where
-        O: BitOrder,
-        V: BitView + Sized,
-    {
+    impl ToMask for Gfx {
         fn to_mask(&self) -> ImageMask {
             let mut mask = ImageMask::new();
-            mask.0
-                .iter_mut()
-                .zip(self.iter())
-                .for_each(|(m_row, c_row)| {
+            self.iter_rows_bitwise()
+                .zip(mask.0.iter_mut())
+                .for_each(|(g_row, m_row)| {
                     m_row
                         .iter_mut()
-                        .zip(c_row.iter())
-                        .for_each(|(m, &c)| *m = c)
+                        .zip(g_row)
+                        .for_each(|(m, &g)| *m = g)
                 });
             mask
         }
