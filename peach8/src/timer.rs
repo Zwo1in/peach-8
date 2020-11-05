@@ -44,10 +44,10 @@ pub mod racy {
     }
 }
 
-#[cfg(feature="atomic")]
+#[cfg(feature = "atomic")]
 pub mod atomic {
-    use core::sync::atomic::{AtomicU8, Ordering};
     use super::TimerState;
+    use core::sync::atomic::{AtomicU8, Ordering};
 
     #[derive(Debug)]
     pub struct Timer(AtomicU8);
@@ -69,17 +69,20 @@ pub mod atomic {
 
         #[inline]
         pub fn decrement(&mut self) -> TimerState {
-            self.0.fetch_update(
-                Ordering::Release,
-                Ordering::Relaxed,
-                |value| if value > 0 { Some(value - 1) } else { Some(value) }
-            )
-            .map(|value| match value {
-                0 => TimerState::Off,
-                1 => TimerState::Finished,
-                _ => TimerState::On,
-            })
-            .unwrap()
+            self.0
+                .fetch_update(Ordering::Release, Ordering::Relaxed, |value| {
+                    if value > 0 {
+                        Some(value - 1)
+                    } else {
+                        Some(value)
+                    }
+                })
+                .map(|value| match value {
+                    0 => TimerState::Off,
+                    1 => TimerState::Finished,
+                    _ => TimerState::On,
+                })
+                .unwrap()
         }
     }
 }

@@ -3,7 +3,7 @@ use core::convert::TryFrom;
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 
-/// An enum representing 36 possible opcodes of chip-8 architecture
+/// An enum representing 35 possible opcodes of chip-8 architecture
 ///
 /// Based on [chip8 mastering](http://mattmik.com/files/chip8/mastering/chip8.html)
 ///
@@ -23,6 +23,8 @@ use log::{debug, error, info, trace, warn};
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum OpCode {
     /// Execute machine language subroutine at address NNN
+    ///
+    /// This opcode is not implemented!
     _0NNN { nnn: u16 },
     /// Clear the screen
     _00E0,

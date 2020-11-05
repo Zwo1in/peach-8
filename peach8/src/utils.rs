@@ -5,7 +5,7 @@ pub mod testing {
 
     use embedded_graphics::{drawable::Pixel, pixelcolor::BinaryColor};
 
-    use crate::gfx::{Gfx, WIDTH, HEIGHT};
+    use crate::gfx::{Gfx, HEIGHT, WIDTH};
 
     #[macro_export]
     macro_rules! assert_eq_2d {
@@ -118,12 +118,7 @@ pub mod testing {
             let mut mask = ImageMask::new();
             self.iter_rows_bitwise()
                 .zip(mask.0.iter_mut())
-                .for_each(|(g_row, m_row)| {
-                    m_row
-                        .iter_mut()
-                        .zip(g_row)
-                        .for_each(|(m, &g)| *m = g)
-                });
+                .for_each(|(g_row, m_row)| m_row.iter_mut().zip(g_row).for_each(|(m, &g)| *m = g));
             mask
         }
     }
@@ -145,8 +140,10 @@ pub mod testing {
             let empty_mask_data: &[u8] = &[0; 8 * HEIGHT];
             let full_mask_data: &[u8] = &[255; 8 * HEIGHT];
 
-            let empty_image: ImageRaw<BinaryColor> = ImageRaw::new(empty_mask_data, WIDTH as u32, HEIGHT as u32);
-            let full_image: ImageRaw<BinaryColor> = ImageRaw::new(full_mask_data, WIDTH as u32, HEIGHT as u32);
+            let empty_image: ImageRaw<BinaryColor> =
+                ImageRaw::new(empty_mask_data, WIDTH as u32, HEIGHT as u32);
+            let full_image: ImageRaw<BinaryColor> =
+                ImageRaw::new(full_mask_data, WIDTH as u32, HEIGHT as u32);
 
             assert_eq!(mask, empty_image.pixel_iter().to_mask());
             assert_eq!(empty_mask_str.to_mask(), empty_image.pixel_iter().to_mask());

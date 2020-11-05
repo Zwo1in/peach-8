@@ -1,10 +1,32 @@
+//! Context for accessing functionalities of platform that `Peach8` is
+//! emulated on.
+//!
+//! To ensure thread-safety execution, implementators should be `Sync`,
+//! although it is not required.
+
 use embedded_graphics::{image::ImageRaw, pixelcolor::BinaryColor};
 
+/// Trait aggregating platform functionalities
 pub trait Context {
+    /// Draw current frame to the screen
+    ///
+    /// Called by `tick_chip` after each cycle
     fn on_frame<'a>(&mut self, frame: ImageRaw<'a, BinaryColor>);
+    /// Turn sound on
+    ///
+    /// Called by `tick_timers` when sound timer is activated
     fn sound_on(&mut self);
+    /// Turn sound off
+    ///
+    /// Called by `tick_timers` when sound timer is deactivated
     fn sound_off(&mut self);
+    /// Get state of each key on 4x4 keyboard
+    ///
+    /// Called by `tick_chip` before each cycle
     fn get_keys(&mut self) -> &[bool; 16];
+    /// Generate random 8-bit number
+    ///
+    /// Called by `tick_chip` whenever requested by executing program
     fn gen_random(&mut self) -> u8;
 }
 

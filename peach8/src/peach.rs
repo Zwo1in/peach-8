@@ -1,24 +1,35 @@
-#![allow(unused)]
+//! Chip-8 interpreter
+//!
+//! Access to platform functionalities is acquired by implementing `Context` trait.
+//!
+//! `Peach-8` is itself thread safe if `atomic` feature is enabled (default).
 
-use core::convert::{Infallible, TryInto};
+use core::convert::TryInto;
 
 use bitvec::prelude::*;
 use embedded_graphics::image::ImageRaw;
 use heapless::{consts::U64, Vec};
 
+#[allow(unused_imports)]
+use log::{error, warn, info, debug, trace};
+
 use crate::context::Context;
-use crate::opcode::OpCode;
 use crate::gfx::{Gfx, HEIGHT, WIDTH};
-use crate::timer::TimerState;
-#[cfg(feature="atomic")]
+use crate::opcode::OpCode;
+#[cfg(feature = "atomic")]
 use crate::timer::atomic::Timer;
-#[cfg(not(feature="atomic"))]
+#[cfg(not(feature = "atomic"))]
 use crate::timer::racy::Timer;
+use crate::timer::TimerState;
 
 const MEM_LENGTH: usize = 4096;
 const START_ADDR: u16 = 0x200;
 const FONTSET_ADDR: u16 = 0x050;
 
+/// Possible states for each key. On pressing down,
+/// the key is in `Pressed` state for one cycle, and then
+/// if still held, in `Down`. On releasing key, the state is
+/// `Released` for one cycle, and then in `Up` state until pressed again
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum KeyState {
     Pressed,
@@ -132,7 +143,11 @@ impl<C: Context + Sized> Peach8<C> {
         }
     }
 
-    fn tick_timers(&mut self) {
+    /// Decrement delay and sound timers. Handle sound on/off events.
+    ///
+    /// # Note
+    /// Should be called with 60Hz frequency
+    pub fn tick_timers(&mut self) {
         self.delay_timer.decrement();
         match self.sound_timer.decrement() {
             TimerState::On => self.ctx.sound_on(),
@@ -141,18 +156,24 @@ impl<C: Context + Sized> Peach8<C> {
         }
     }
 
-    fn tick_chip(&mut self) -> Result<(), &'static str> {
+    /// Progress emulation by one cycle. Handle user input and drawing to the screen
+    ///
+    /// # Note
+    /// Should be called with around 500Hz frequency
+    pub fn tick_chip(&mut self) -> Result<(), &'static str> {
         self.update_keys();
         self.read_opcode()
             .and_then(|op| self.execute(op))
-            .and(Ok(self.ctx.on_frame(
-                ImageRaw::new(self.gfx.as_raw(), WIDTH as u32, HEIGHT as u32)
-            )))
+            .and(Ok(self.ctx.on_frame(ImageRaw::new(
+                self.gfx.as_raw(),
+                WIDTH as u32,
+                HEIGHT as u32,
+            ))))
             .map(|_| ())
     }
 }
 
-#[cfg(feature="atomic")]
+#[cfg(feature = "atomic")]
 unsafe impl<C: Context + Sized + Sync> core::marker::Sync for Peach8<C> {}
 
 #[cfg(test)]
@@ -235,7 +256,9 @@ mod tests {
         chip.tick_timers();
         assert!(chip.ctx.is_sound_on());
 
-        for _ in 0..100 { chip.tick_timers(); }
+        for _ in 0..100 {
+            chip.tick_timers();
+        }
         assert!(chip.ctx.is_sound_on());
         assert_eq!(chip.delay_timer.load(), 0);
         assert_eq!(chip.sound_timer.load(), 0);
@@ -248,15 +271,9 @@ mod tests {
 
     #[test]
     fn read_opcode() -> Result<(), &'static str> {
-        let mut chip = Peach8::load(
-            TestingContext::new(0),
-            &[0x14u8, 0x65u8],
-        );
+        let mut chip = Peach8::load(TestingContext::new(0), &[0x14u8, 0x65u8]);
         let opcode = chip.read_opcode()?;
-        assert_eq!(
-            opcode,
-            OpCode::_1NNN { nnn: 0x465u16 },
-        );
+        assert_eq!(opcode, OpCode::_1NNN { nnn: 0x465u16 },);
 
         chip.pc = (MEM_LENGTH - 1) as u16;
         assert_eq!(
@@ -269,43 +286,13 @@ mod tests {
 
 #[cfg(test)]
 mod rom_tests {
-    use super::*;
-    use crate::context::testing::TestingContext;
-
-    /// TEST ORDER
-    /// 0: 3XNN
-    /// 1: 4XNN
-    /// 2: 5XY0
-    /// 3: 7XNN (not carry flag and overflow value)
-    /// 4: 8XY0
-    /// 5: 8XY1
-    /// 6: 8XY2
-    /// 7: 8XY3
-    /// 8: 8XY4
-    /// 9: 8XY5
-    /// 10: 8XY6
-    /// 12: 8XY7
-    /// 12: 8XYE
-    /// 13: 9XY0
-    /// 14: BNNN
-    /// 15: CXNN  Note: Always a small chance of failure if(rand() == rand()) { fail }
-    /// 16: FX07  Note: If fail it may be because either FX15 or FX07 fails or because delay_timer is
-    ///                 not implemented. If the the emulation is too fast this might also fail.
-    /// 17:FX33/FX65/ANNN
-    /// 18:FX55/FX65
-    /// 19: FX1E
-    #[ignore]
-    #[test]
-    fn rom_skosulor_c8int() {
-        let rom = include_bytes!("../test-data/skosulor_c8int/test.c8");
-        Peach8::load(TestingContext::new(0), &rom[..]);
-    }
 }
 
 // OpCodes impls
 impl<C: Context + Sized> Peach8<C> {
     #[rustfmt::skip]
     fn execute(&mut self, opcode: OpCode) -> Result<(), &'static str>{
+        debug!("Executing: {:?}", opcode);
         match opcode {
             OpCode::_0NNN { nnn }     => return self.exec_ml_subroutine_at(nnn),
             OpCode::_00E0             => self.clear_screen(),
@@ -348,7 +335,7 @@ impl<C: Context + Sized> Peach8<C> {
 
     /// Execute machine language subroutine at address NNN
     /// 0NNN { nnn: u16 },
-    fn exec_ml_subroutine_at(&mut self, nnn: u16) -> Result<(), &'static str> {
+    fn exec_ml_subroutine_at(&mut self, _nnn: u16) -> Result<(), &'static str> {
         Err("Machine code subroutines not supported")
     }
 
@@ -536,7 +523,7 @@ impl<C: Context + Sized> Peach8<C> {
         let addr = nnn + self.v[0] as u16;
         if addr < START_ADDR {
             Err("Attempted to jump out of program's address space")
-        } else if addr <= MEM_LENGTH as u16 {
+        } else if addr < MEM_LENGTH as u16 {
             self.pc = addr;
             Ok(())
         } else {
@@ -567,8 +554,8 @@ impl<C: Context + Sized> Peach8<C> {
         let mut collision = false;
         for x_idx in x..x_stop {
             for y_idx in y..y_stop {
-                let row = BitSlice::<Msb0, _>::from_element(
-                    &self.memory[self.i as usize + y_idx - y]);
+                let row =
+                    BitSlice::<Msb0, _>::from_element(&self.memory[self.i as usize + y_idx - y]);
                 let to_draw = *row.get(x_idx - x).unwrap();
                 let curr_bit = *self.gfx.get_bit(x_idx, y_idx).unwrap();
                 if to_draw && to_draw == curr_bit {
@@ -649,8 +636,8 @@ impl<C: Context + Sized> Peach8<C> {
     /// Add the value stored in register VX to register I
     /// FX1E { x: u8 },
     fn assign_add_i_vx(&mut self, x: u8) -> Result<(), &'static str> {
-        let addr = self.i + self.v[0] as u16;
-        if addr <= MEM_LENGTH as u16 {
+        let addr = self.i + self.v[x as usize] as u16;
+        if addr < MEM_LENGTH as u16 {
             self.i = addr;
             Ok(())
         } else {
@@ -1215,7 +1202,9 @@ mod opcodes_execution_tests {
     #[test]
     fn execute_annn_assign_i_nnn() -> Result<(), &'static str> {
         let mut chip = Peach8::new(TestingContext::new(0));
-        let opcode = OpCode::_ANNN { nnn: MEM_LENGTH as u16 - 1 };
+        let opcode = OpCode::_ANNN {
+            nnn: MEM_LENGTH as u16 - 1,
+        };
         assert_eq!(chip.i, 0x0000u16);
         chip.execute(opcode)?;
         assert_eq!(chip.i, MEM_LENGTH as u16 - 1);
