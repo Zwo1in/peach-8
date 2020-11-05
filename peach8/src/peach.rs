@@ -284,15 +284,10 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-mod rom_tests {
-}
-
 // OpCodes impls
 impl<C: Context + Sized> Peach8<C> {
     #[rustfmt::skip]
     fn execute(&mut self, opcode: OpCode) -> Result<(), &'static str>{
-        debug!("Executing: {:?}", opcode);
         match opcode {
             OpCode::_0NNN { nnn }     => return self.exec_ml_subroutine_at(nnn),
             OpCode::_00E0             => self.clear_screen(),
@@ -419,7 +414,7 @@ impl<C: Context + Sized> Peach8<C> {
     /// Add the value NN to register VX
     /// 7XNN { x: u8, nn: u8 },
     fn assign_add_vx_nn(&mut self, x: u8, nn: u8) -> Result<(), &'static str> {
-        self.v[x as usize] = self.v[x as usize].overflowing_add(nn).0;
+        self.v[x as usize] = self.v[x as usize].wrapping_add(nn);
         Ok(())
     }
 

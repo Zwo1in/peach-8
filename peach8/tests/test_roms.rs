@@ -61,7 +61,7 @@ impl TestingContext {
     }
 
     fn formatted(&self) -> String {
-        self.0.join("\n")
+        self.0.join("\n") + "\n"
     }
 }
 
@@ -89,6 +89,9 @@ impl Context for TestingContext {
     }
 }
 
+/// Not working currently as using modern opcode's behaviours. For future impl of compatibility
+/// flags
+///
 /// TEST ORDER
 /// 0: 3XNN
 /// 1: 4XNN
@@ -111,6 +114,7 @@ impl Context for TestingContext {
 /// 17:FX33/FX65/ANNN
 /// 18:FX55/FX65
 /// 19: FX1E
+#[ignore]
 #[test]
 fn rom_skosulor_c8int() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -131,6 +135,33 @@ fn rom_skosulor_c8int() {
         .ctx
         .formatted();
     let rhs = include_str!("../test-data/context/empty_mask");
+    assert_eq!(
+        &lhs,
+        rhs,
+        "\nlhs:\n{}\n\nrhs:\n{}", lhs, rhs,
+    );
+}
+
+#[test]
+fn rom_corax89_chip8_test_rom() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let rom = include_bytes!("../test-data/corax89_chip8-test-rom/test_opcode.ch8");
+    let chip = Arc::new(Mutex::new(Peach8::load(TestingContext::new(), &rom[..])));
+    let chip_timers = Arc::clone(&chip);
+    let chip_test = Arc::clone(&chip);
+    thread::scope(|s| {
+        schedule_for!(s, || chip.lock().unwrap().tick_chip().unwrap(), 500, Duration::from_millis(500));
+        schedule_for!(s, || chip_timers.lock().unwrap().tick_timers(), 60, Duration::from_millis(500));
+    })
+    .unwrap();
+
+    let lhs = chip_test
+        .lock()
+        .unwrap()
+        .ctx
+        .formatted();
+    let rhs = include_str!("../test-data/corax89_chip8-test-rom/expected_result");
     assert_eq!(
         &lhs,
         rhs,
