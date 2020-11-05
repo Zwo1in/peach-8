@@ -40,8 +40,9 @@ impl KeyState {
     }
 }
 
+/// Chip-8 virtual machine
 pub struct Peach8<C: Context + Sized> {
-    ctx: C,
+    pub ctx: C,
     v: [u8; 16],
     i: u16,
     pc: u16,

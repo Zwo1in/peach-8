@@ -18,7 +18,13 @@ log = "0.4.11"
 version = "0.19.3"
 default-features = false
 
+[dev-dependencies]
+rand = "0.7"
+env_logger = "0.8"
+crossbeam-utils = "0.8"
+
 [dev-dependencies.nanorand]
 version = "0.4.4"
 features = ["pcg64"]
 default-features = false
+
