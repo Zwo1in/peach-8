@@ -61,6 +61,6 @@ pub mod peach;
 pub(crate) mod timer;
 pub(crate) mod utils;
 
-pub use embedded_graphics;
 pub use context::Context;
+pub use embedded_graphics;
 pub use peach::Peach8;

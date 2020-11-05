@@ -11,7 +11,7 @@ use embedded_graphics::image::ImageRaw;
 use heapless::{consts::U64, Vec};
 
 #[allow(unused_imports)]
-use log::{error, warn, info, debug, trace};
+use log::{debug, error, info, trace, warn};
 
 use crate::context::Context;
 use crate::gfx::{Gfx, HEIGHT, WIDTH};

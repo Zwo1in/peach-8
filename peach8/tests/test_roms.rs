@@ -1,13 +1,17 @@
-use std::sync::{Arc, atomic::{AtomicUsize, Ordering}, Mutex};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, Instant};
 
 use crossbeam_utils::thread;
 
-use peach8::{Context, Peach8};
-use peach8::embedded_graphics::{
-    image::ImageRaw,
-    image::IntoPixelIter,
-    pixelcolor::BinaryColor,
+use peach8::{
+    embedded_graphics::{
+        image::{ImageRaw, IntoPixelIter},
+        pixelcolor::BinaryColor,
+    },
+    Context, Peach8,
 };
 
 macro_rules! schedule_for {
@@ -15,19 +19,17 @@ macro_rules! schedule_for {
         let started = Instant::now();
         let period = Duration::from_nanos(1_000_000_000u64 / $freq);
         let mut previous = started;
-        $scope.spawn(move |_| {
-            loop {
-                let now = Instant::now();
-                if now.duration_since(started) >= $timeout {
-                    break;
-                }
-                if now.duration_since(previous) >= period {
-                    $f();
-                    previous = now;
-                }
+        $scope.spawn(move |_| loop {
+            let now = Instant::now();
+            if now.duration_since(started) >= $timeout {
+                break;
+            }
+            if now.duration_since(previous) >= period {
+                $f();
+                previous = now;
             }
         })
-    }}
+    }};
 }
 
 #[ignore]
@@ -38,7 +40,9 @@ fn scheduler_tests() {
         let counter_cln = Arc::clone(&counter);
         schedule_for!(
             s,
-            || { counter_cln.fetch_add(1, Ordering::Relaxed); },
+            || {
+                counter_cln.fetch_add(1, Ordering::Relaxed);
+            },
             10,
             Duration::from_secs(3)
         );
@@ -69,10 +73,13 @@ impl Context for TestingContext {
     fn on_frame<'a>(&mut self, frame: ImageRaw<'a, BinaryColor>) {
         frame.pixel_iter().for_each(|px| {
             let (x, y) = (px.0.x as usize, px.0.y as usize);
-            self.0[y].replace_range(x..x+1, match px.1 {
-                BinaryColor::On => "#",
-                BinaryColor::Off => ".",
-            });
+            self.0[y].replace_range(
+                x..x + 1,
+                match px.1 {
+                    BinaryColor::On => "#",
+                    BinaryColor::Off => ".",
+                },
+            );
         });
     }
 
@@ -124,22 +131,53 @@ fn rom_skosulor_c8int() {
     let chip_timers = Arc::clone(&chip);
     let chip_test = Arc::clone(&chip);
     thread::scope(|s| {
-        schedule_for!(s, || chip.lock().unwrap().tick_chip().unwrap(), 500, Duration::from_millis(300));
-        schedule_for!(s, || chip_timers.lock().unwrap().tick_timers(), 60, Duration::from_millis(300));
+        schedule_for!(
+            s,
+            || chip.lock().unwrap().tick_chip().unwrap(),
+            500,
+            Duration::from_millis(300)
+        );
+        schedule_for!(
+            s,
+            || chip_timers.lock().unwrap().tick_timers(),
+            60,
+            Duration::from_millis(300)
+        );
     })
     .unwrap();
 
-    let lhs = chip_test
-        .lock()
-        .unwrap()
-        .ctx
-        .formatted();
+    let lhs = chip_test.lock().unwrap().ctx.formatted();
     let rhs = include_str!("../test-data/context/empty_mask");
-    assert_eq!(
-        &lhs,
-        rhs,
-        "\nlhs:\n{}\n\nrhs:\n{}", lhs, rhs,
-    );
+    assert_eq!(&lhs, rhs, "\nlhs:\n{}\n\nrhs:\n{}", lhs, rhs,);
+}
+
+#[test]
+fn rom_corax89_chip8_test_rom() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let rom = include_bytes!("../test-data/corax89_chip8-test-rom/test_opcode.ch8");
+    let chip = Arc::new(Mutex::new(Peach8::load(TestingContext::new(), &rom[..])));
+    let chip_timers = Arc::clone(&chip);
+    let chip_test = Arc::clone(&chip);
+    thread::scope(|s| {
+        schedule_for!(
+            s,
+            || chip.lock().unwrap().tick_chip().unwrap(),
+            500,
+            Duration::from_millis(500)
+        );
+        schedule_for!(
+            s,
+            || chip_timers.lock().unwrap().tick_timers(),
+            60,
+            Duration::from_millis(500)
+        );
+    })
+    .unwrap();
+
+    let lhs = chip_test.lock().unwrap().ctx.formatted();
+    let rhs = include_str!("../test-data/corax89_chip8-test-rom/expected_result");
+    assert_eq!(&lhs, rhs, "\nlhs:\n{}\n\nrhs:\n{}", lhs, rhs,);
 }
 
 #[test]
