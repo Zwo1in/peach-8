@@ -11,6 +11,10 @@ cortex-m-rt = "0.6.3"
 panic-itm = "0.4.0"
 log = "0.4.11"
 
+[dependencies.peach8]
+path = "../peach8"
+version = "*"
+
 [dependencies.cortex-m-log]
 features = ["itm", "semihosting", "log-integration"]
 version = "0.6.2"
