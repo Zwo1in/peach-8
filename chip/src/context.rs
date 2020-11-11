@@ -17,17 +17,17 @@ pub(crate) struct DiscoveryContext<T: WriteOnlyDataCommand> {
 
 impl<T: WriteOnlyDataCommand> Context for DiscoveryContext<T> {
     /// map image from 64x32 to 128x64
-    fn on_frame<'a>(&mut self, frame: ImageRaw<'a, BinaryColor>) {
-        let im_raw = frame
+    fn on_frame(&mut self, frame: ImageRaw<'_, BinaryColor>) {
+        frame
             .pixel_iter()
-            .flat_map(|pixel| {
+            .flat_map(|Pixel(point, color)| {
                 (0..4).map(move |n| {
                     Pixel(
                         Point {
-                            x: 2 * pixel.0.x + n % 2,
-                            y: 2 * pixel.0.y + n / 2,
+                            x: 2 * point.x + n % 2,
+                            y: 2 * point.y + n / 2,
                         },
-                        pixel.1,
+                        color,
                     )
                 })
             })

@@ -11,7 +11,7 @@ pub trait Context {
     /// Draw current frame to the screen
     ///
     /// Called by `tick_chip` after each cycle
-    fn on_frame<'a>(&mut self, frame: ImageRaw<'a, BinaryColor>);
+    fn on_frame(&mut self, frame: ImageRaw<'_, BinaryColor>);
     /// Turn sound on
     ///
     /// Called by `tick_timers` when sound timer is activated

@@ -22,7 +22,7 @@ pub fn init_ssd1306_on_spi2<H, SCK, MISO, MOSI, CS, DC, RST>(
     apb1: &mut rcc::APB1,
     syst: SYST,
     clocks: rcc::Clocks,
-) -> GraphicsMode<SPIInterface<Spi<SPI2, (SCK, MISO, MOSI)>, DC, CS>>
+) -> GraphicsMode<impl WriteOnlyDataCommand>
 where
     H: Into<Hertz>,
     SCK: SckPin<SPI2>,

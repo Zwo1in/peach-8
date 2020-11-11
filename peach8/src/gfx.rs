@@ -24,13 +24,7 @@ impl Gfx {
     pub fn xor_bit(&mut self, x: usize, y: usize, val: bool) -> Result<(), &'static str> {
         self.iter_rows_bitwise_mut()
             .nth(y)
-            .map(|row| {
-                if let Some(mut b) = row.get_mut(x) {
-                    Some(*b ^= val)
-                } else {
-                    None
-                }
-            })
+            .map(|row| row.get_mut(x).map(|mut bit| *bit ^= val))
             .flatten()
             .ok_or("Pixel index out of bounds")
     }

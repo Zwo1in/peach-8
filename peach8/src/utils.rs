@@ -59,17 +59,17 @@ pub mod testing {
     impl fmt::Debug for ImageMask {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             let width = self.0[0].len() + 2;
-            write!(f, "\n")?;
+            writeln!(f)?;
             for _ in 0..width {
                 write!(f, "-")?;
             }
-            write!(f, "\n")?;
+            writeln!(f)?;
             for row in &self.0 {
                 write!(f, "|")?;
                 row.iter()
                     .map(|&p| if p { write!(f, ".") } else { write!(f, " ") })
                     .fold(Ok(()), |acc, r| acc.and(r))?;
-                write!(f, "|\n")?;
+                writeln!(f)?;
             }
             for _ in 0..width {
                 write!(f, "-")?;

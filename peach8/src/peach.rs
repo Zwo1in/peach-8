@@ -164,12 +164,13 @@ impl<C: Context + Sized> Peach8<C> {
         self.update_keys();
         self.read_opcode()
             .and_then(|op| self.execute(op))
-            .and(Ok(self.ctx.on_frame(ImageRaw::new(
-                self.gfx.as_raw(),
-                WIDTH as u32,
-                HEIGHT as u32,
-            ))))
-            .map(|_| ())
+            .and({
+                self.ctx.on_frame(ImageRaw::new(
+                    self.gfx.as_raw(),
+                    WIDTH as u32,
+                    HEIGHT as u32));
+                Ok(())
+            })
     }
 }
 
@@ -568,10 +569,8 @@ impl<C: Context + Sized> Peach8<C> {
     /// EX9E { x: u8 },
     fn skip_if_vx_in_keys(&mut self, x: u8) -> Result<(), &'static str> {
         let key = self.v[x as usize];
-        if key < 0x10u8 {
-            if [KeyState::Pressed, KeyState::Down].contains(&self.keys[key as usize]) {
-                return self.pc_increment();
-            }
+        if key < 0x10u8 && [KeyState::Pressed, KeyState::Down].contains(&self.keys[key as usize]) {
+            return self.pc_increment();
         }
         Ok(())
     }
@@ -580,12 +579,10 @@ impl<C: Context + Sized> Peach8<C> {
     /// EXA1 { x: u8 },
     fn skip_if_vx_not_in_keys(&mut self, x: u8) -> Result<(), &'static str> {
         let key = self.v[x as usize];
-        if key < 0x10u8 {
-            if [KeyState::Pressed, KeyState::Down].contains(&self.keys[key as usize]) {
-                return Ok(());
-            }
+        if key < 0x10u8 && [KeyState::Pressed, KeyState::Down].contains(&self.keys[key as usize]) {
+            return Ok(());
         }
-        return self.pc_increment();
+        self.pc_increment()
     }
 
     /// Store the current value of the delay timer in register VX
