@@ -10,6 +10,7 @@ edition = "2018"
 cortex-m = "0.6.3"
 cortex-m-rt = "0.6.3"
 panic-itm = "0.4.0"
+ssd1306 = "0.4.0"
 log = "0.4.11"
 
 [dependencies.cortex-m-log]

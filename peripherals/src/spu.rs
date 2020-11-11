@@ -16,7 +16,7 @@ pub fn init_tim3_pwm_on_pb5(
     freq: Hertz,
     tim3: TIM3,
     pb5: gpiob::PB5<AF2>,
-    clocks: &rcc::Clocks,
+    clocks: rcc::Clocks,
 ) -> PwmChannel<TIM3_CH2, WithPins> {
     info!("configuring timer3 in pwm mode");
     let resolution = core::u16::MAX;

@@ -179,30 +179,3 @@ fn rom_corax89_chip8_test_rom() {
     let rhs = include_str!("../test-data/corax89_chip8-test-rom/expected_result");
     assert_eq!(&lhs, rhs, "\nlhs:\n{}\n\nrhs:\n{}", lhs, rhs,);
 }
-
-#[test]
-fn rom_corax89_chip8_test_rom() {
-    let _ = env_logger::builder().is_test(true).try_init();
-
-    let rom = include_bytes!("../test-data/corax89_chip8-test-rom/test_opcode.ch8");
-    let chip = Arc::new(Mutex::new(Peach8::load(TestingContext::new(), &rom[..])));
-    let chip_timers = Arc::clone(&chip);
-    let chip_test = Arc::clone(&chip);
-    thread::scope(|s| {
-        schedule_for!(s, || chip.lock().unwrap().tick_chip().unwrap(), 500, Duration::from_millis(500));
-        schedule_for!(s, || chip_timers.lock().unwrap().tick_timers(), 60, Duration::from_millis(500));
-    })
-    .unwrap();
-
-    let lhs = chip_test
-        .lock()
-        .unwrap()
-        .ctx
-        .formatted();
-    let rhs = include_str!("../test-data/corax89_chip8-test-rom/expected_result");
-    assert_eq!(
-        &lhs,
-        rhs,
-        "\nlhs:\n{}\n\nrhs:\n{}", lhs, rhs,
-    );
-}

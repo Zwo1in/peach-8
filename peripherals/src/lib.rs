@@ -9,6 +9,7 @@ use log::{debug, error, info, trace, warn};
 
 pub mod keeb;
 pub mod logger;
+pub mod ppu;
 pub mod spu;
 
 pub fn freeze_clocks(
