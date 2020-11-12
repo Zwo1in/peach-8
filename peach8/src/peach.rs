@@ -162,15 +162,14 @@ impl<C: Context + Sized> Peach8<C> {
     /// Should be called with around 500Hz frequency
     pub fn tick_chip(&mut self) -> Result<(), &'static str> {
         self.update_keys();
-        self.read_opcode()
-            .and_then(|op| self.execute(op))
-            .and({
-                self.ctx.on_frame(ImageRaw::new(
-                    self.gfx.as_raw(),
-                    WIDTH as u32,
-                    HEIGHT as u32));
-                Ok(())
-            })
+        self.read_opcode().and_then(|op| self.execute(op)).and({
+            self.ctx.on_frame(ImageRaw::new(
+                self.gfx.as_raw(),
+                WIDTH as u32,
+                HEIGHT as u32,
+            ));
+            Ok(())
+        })
     }
 }
 

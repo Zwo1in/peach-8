@@ -87,8 +87,8 @@ impl Context for TestingContext {
 
     fn sound_off(&mut self) {}
 
-    fn get_keys(&mut self) -> &[bool; 16] {
-        &[false; 16]
+    fn get_keys(&mut self) -> [bool; 16] {
+        [false; 16]
     }
 
     fn gen_random(&mut self) -> u8 {

@@ -12,6 +12,8 @@ pub mod logger;
 pub mod ppu;
 pub mod spu;
 
+pub use keeb::Keeb;
+
 pub fn freeze_clocks(
     sysclk_freq: MegaHertz,
     cfgr: rcc::CFGR,

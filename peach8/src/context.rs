@@ -23,7 +23,7 @@ pub trait Context {
     /// Get state of each key on 4x4 keyboard
     ///
     /// Called by `tick_chip` before each cycle
-    fn get_keys(&mut self) -> &[bool; 16];
+    fn get_keys(&mut self) -> [bool; 16];
     /// Generate random 8-bit number
     ///
     /// Called by `tick_chip` whenever requested by executing program
@@ -90,7 +90,7 @@ pub mod testing {
             self.rng.generate::<u8>()
         }
 
-        fn get_keys(&mut self) -> &[bool; 16] {
+        fn get_keys(&mut self) -> [bool; 16] {
             &self.keys
         }
     }
