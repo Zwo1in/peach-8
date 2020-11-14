@@ -28,7 +28,7 @@ use stm32f303::{
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
-use peripherals::{freeze_clocks, logger::*, ppu, spu};
+use peripherals::{freeze_clocks, /*logger::*,*/ ppu, spu};
 
 use peach8::Peach8;
 
@@ -52,7 +52,6 @@ fn main() -> ! {
     let sysclk_freq = 36.mhz();
     let clocks = freeze_clocks(sysclk_freq, rcc.cfgr, &mut flash);
 
-    let mut gpioa = dp.GPIOA.split(&mut rcc.ahb);
     let mut gpiob = dp.GPIOB.split(&mut rcc.ahb);
     let mut gpiod = dp.GPIOD.split(&mut rcc.ahb);
 
@@ -69,7 +68,7 @@ fn main() -> ! {
     let miso = gpiob.pb14.into_af5(&mut gpiob.moder, &mut gpiob.afrh);
     let mosi = gpiob.pb15.into_af5(&mut gpiob.moder, &mut gpiob.afrh);
 
-    let mut spi_display = ppu::init_ssd1306_on_spi2(
+    let spi_display = ppu::init_ssd1306_on_spi2(
         8.mhz(),
         dp.SPI2,
         (sck, miso, mosi),
@@ -79,6 +78,7 @@ fn main() -> ! {
         clocks,
     );
 
+    //info!("configuring keyboard");
     let mut pd0 = gpiod.pd0.into_push_pull_output(&mut gpiod.moder, &mut gpiod.otyper);
     let mut pd2 = gpiod.pd2.into_push_pull_output(&mut gpiod.moder, &mut gpiod.otyper);
     let mut pd4 = gpiod.pd4.into_push_pull_output(&mut gpiod.moder, &mut gpiod.otyper);
@@ -89,15 +89,12 @@ fn main() -> ! {
     let pd5 = gpiod.pd5.into_pull_down_input(&mut gpiod.moder, &mut gpiod.pupdr);
     let pd7 = gpiod.pd7.into_pull_down_input(&mut gpiod.moder, &mut gpiod.pupdr);
 
-    let mut keeb = peripherals::Keeb::new(
+    let keeb = peripherals::Keeb::new(
         [&mut pd0, &mut pd2, &mut pd4, &mut pd6],
         [&pd1, &pd3, &pd5, &pd7],
     );
 
-    let rom = include_bytes!("../../roms/BRIX");
-    let ctx = DiscoveryContext::new(spi_display, keeb, &mut pwm_channel);
-    let mut peach8 = Peach8::load(ctx, &rom[..]);
-
+    //info!("setting up timers");
     let tim1_freq = 60;
     let mut tim1 = Timer::tim1(dp.TIM1, tim1_freq.hz(), clocks, &mut rcc.apb2);
     tim1.start(tim1_freq.hz());
@@ -106,11 +103,19 @@ fn main() -> ! {
     let mut tim2 = Timer::tim2(dp.TIM2, tim2_freq.hz(), clocks, &mut rcc.apb1);
     tim2.start(tim2_freq.hz());
 
+    let tim4_freq = 30;
+    let mut tim4 = Timer::tim4(dp.TIM4, tim4_freq.hz(), clocks, &mut rcc.apb1);
+    tim4.start(tim4_freq.hz());
+
+    //info!("setting up peach8");
+    let rom = include_bytes!("../../roms/PONG");
+    let ctx = DiscoveryContext::new(spi_display, keeb, &mut pwm_channel, tim4);
+    let mut peach8 = Peach8::load(ctx, &rom[..]);
+
     loop {
         if tim1.wait().is_ok() {
             //info!("Tick timers!");
             peach8.tick_timers();
-            peach8.ctx.display.flush().unwrap();
         }
 
         if tim2.wait().is_ok() {
