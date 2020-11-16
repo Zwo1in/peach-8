@@ -5,11 +5,11 @@ authors = ["Zwo1in <zwolin13@gmail.com>"]
 edition = "2018"
 
 [features]
-default = ["atomic"]
+default = ["atomic", "embedded-graphics"]
 atomic = []
 
 [dependencies]
-embedded-graphics = "0.6.2"
+embedded-graphics = { version = "0.6.2", optional = true }
 heapless = "0.5.6"
 nb = "1.0.0"
 log = "0.4.11"

@@ -7,14 +7,13 @@
 use core::convert::TryInto;
 
 use bitvec::prelude::*;
-use embedded_graphics::image::ImageRaw;
 use heapless::{consts::U64, Vec};
 
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 
 use crate::context::Context;
-use crate::gfx::{Gfx, HEIGHT, WIDTH};
+use crate::frame::{Frame, HEIGHT, WIDTH};
 use crate::opcode::OpCode;
 #[cfg(feature = "atomic")]
 use crate::timer::atomic::Timer;
@@ -57,7 +56,7 @@ pub struct Peach8<C: Context + Sized> {
     v: [u8; 16],
     i: u16,
     pc: u16,
-    gfx: Gfx,
+    frame: Frame,
     keys: [KeyState; 16],
     stack: Vec<u16, U64>,
     memory: [u8; MEM_LENGTH],
@@ -72,7 +71,7 @@ impl<C: Context + Sized> Peach8<C> {
             v: [0; 16],
             i: 0,
             pc: START_ADDR,
-            gfx: Gfx::new(),
+            frame: Frame::new(),
             keys: [KeyState::Up; 16],
             stack: Vec::new(),
             memory: [0; MEM_LENGTH],
@@ -143,7 +142,7 @@ impl<C: Context + Sized> Peach8<C> {
         }
     }
 
-    /// Decrement delay and sound timers. Handle sound on/off events.
+    /// Decrement delay and sound timers. Handles sound on/off events.
     ///
     /// # Note
     /// Should be called with 60Hz frequency
@@ -156,20 +155,21 @@ impl<C: Context + Sized> Peach8<C> {
         }
     }
 
-    /// Progress emulation by one cycle. Handle user input and drawing to the screen
+    /// Progress emulation by one cycle. Handles user input and drawing to the screen
     ///
     /// # Note
     /// Should be called with around 500Hz frequency
     pub fn tick_chip(&mut self) -> Result<(), &'static str> {
         self.update_keys();
         self.read_opcode().and_then(|op| self.execute(op)).and({
-            self.ctx.on_frame(ImageRaw::new(
-                self.gfx.as_raw(),
-                WIDTH as u32,
-                HEIGHT as u32,
-            ));
+            self.ctx.on_frame(self.frame.view());
             Ok(())
         })
+    }
+
+    /// Drop and release held `Context`
+    pub fn release(self) -> C {
+        self.ctx
     }
 }
 
@@ -337,7 +337,7 @@ impl<C: Context + Sized> Peach8<C> {
     /// Clear the screen
     /// 00E0,
     fn clear_screen(&mut self) -> Result<(), &'static str> {
-        self.gfx = Gfx::new();
+        self.frame = Frame::new();
         Ok(())
     }
 
@@ -552,11 +552,11 @@ impl<C: Context + Sized> Peach8<C> {
                 let row =
                     BitSlice::<Msb0, _>::from_element(&self.memory[self.i as usize + y_idx - y]);
                 let to_draw = *row.get(x_idx - x).unwrap();
-                let curr_bit = *self.gfx.get_bit(x_idx, y_idx).unwrap();
+                let curr_bit = *self.frame.view().get_bit(x_idx, y_idx).unwrap();
                 if to_draw && to_draw == curr_bit {
                     collision = true;
                 }
-                self.gfx.xor_bit(x_idx, y_idx, to_draw)?;
+                self.frame.xor_bit(x_idx, y_idx, to_draw)?;
             }
         }
 
@@ -807,7 +807,7 @@ mod opcodes_execution_tests {
 
         assert_eq_2d!(
             x_range: .., y_range: ..;
-            chip.gfx.to_mask(), empty_mask_str.to_mask()
+            chip.frame.view().to_mask(), empty_mask_str.to_mask()
         );
 
         chip.assign_vx_nn(1, 0x0F)?;
@@ -815,7 +815,7 @@ mod opcodes_execution_tests {
         chip.draw_n_at_vx_vy(0, 0, 5)?;
         assert_eq_2d!(
             x_range: 0..8, y_range: 0..5;
-            chip.gfx.to_mask(), "####....
+            chip.frame.view().to_mask(), "####....
                                  #.......
                                  ####....
                                  #.......
@@ -825,7 +825,7 @@ mod opcodes_execution_tests {
         chip.execute(opcode)?;
         assert_eq_2d!(
             x_range: .., y_range: ..;
-            chip.gfx.to_mask(), empty_mask_str.to_mask()
+            chip.frame.view().to_mask(), empty_mask_str.to_mask()
         );
         Ok(())
     }
@@ -1253,7 +1253,7 @@ mod opcodes_execution_tests {
         chip.execute(opcode)?;
         assert_eq_2d!(
             x_range: 0..8, y_range: 0..8;
-            chip.gfx.to_mask(), "........
+            chip.frame.view().to_mask(), "........
                                  ..####..
                                  ..#.....
                                  ..####..
@@ -1271,7 +1271,7 @@ mod opcodes_execution_tests {
         chip.execute(opcode)?;
         assert_eq_2d!(
             x_range: 0..8, y_range: 0..8;
-            chip.gfx.to_mask(), "........
+            chip.frame.view().to_mask(), "........
                                  ........
                                  ........
                                  ........
@@ -1288,7 +1288,7 @@ mod opcodes_execution_tests {
         chip.execute(opcode)?;
         assert_eq_2d!(
             x_range: 60..64, y_range: 28..32;
-            chip.gfx.to_mask(), "....
+            chip.frame.view().to_mask(), "....
                                  ....
                                  ..##
                                  ..#.".to_mask().offset(60, 28)

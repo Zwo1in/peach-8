@@ -4,14 +4,14 @@
 //! To ensure thread-safety execution, implementators should be `Sync`,
 //! although it is not required.
 
-use embedded_graphics::{image::ImageRaw, pixelcolor::BinaryColor};
+use crate::frame::FrameView;
 
 /// Trait aggregating platform functionalities
 pub trait Context {
     /// Draw current frame to the screen
     ///
     /// Called by `tick_chip` after each cycle
-    fn on_frame(&mut self, frame: ImageRaw<'_, BinaryColor>);
+    fn on_frame(&mut self, frame: FrameView<'_>);
     /// Turn sound on
     ///
     /// Called by `tick_timers` when sound timer is activated
@@ -34,9 +34,9 @@ pub trait Context {
 pub mod testing {
     use super::*;
 
-    use embedded_graphics::image::IntoPixelIter;
     use nanorand::{rand::pcg64::Pcg64 as Rng, RNG};
 
+    use crate::frame::MEM_LENGTH;
     use crate::utils::testing::{ImageMask, ToMask};
 
     pub struct TestingContext {
@@ -74,8 +74,8 @@ pub mod testing {
     }
 
     impl Context for TestingContext {
-        fn on_frame<'a>(&mut self, frame: ImageRaw<'a, BinaryColor>) {
-            self.frame = Some(frame.pixel_iter().to_mask());
+        fn on_frame(&mut self, frame: FrameView<'_>) {
+            self.frame = Some(frame.to_mask());
         }
 
         fn sound_on(&mut self) {
@@ -91,7 +91,7 @@ pub mod testing {
         }
 
         fn get_keys(&mut self) -> [bool; 16] {
-            &self.keys
+            self.keys
         }
     }
 
@@ -100,10 +100,9 @@ pub mod testing {
         let mut ctx = TestingContext::new(0);
 
         let full_mask_str = include_str!("../test-data/context/full_mask");
-        let full_mask_data: &[u8] = &[255; 8 * 32];
-        let full_image: ImageRaw<BinaryColor> = ImageRaw::new(full_mask_data, 64, 32);
+        let full_mask_data: &[u8; MEM_LENGTH] = &[255; MEM_LENGTH];
 
-        ctx.on_frame(full_image);
+        ctx.on_frame(FrameView::new(full_mask_data));
         assert!(ctx.frame.is_some());
         assert_eq!(ctx.frame.unwrap(), full_mask_str.to_mask());
 

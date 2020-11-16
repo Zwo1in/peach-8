@@ -6,13 +6,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam_utils::thread;
 
-use peach8::{
-    embedded_graphics::{
-        image::{ImageRaw, IntoPixelIter},
-        pixelcolor::BinaryColor,
-    },
-    Context, Peach8,
-};
+use peach8::{frame::FrameView, Context, Peach8};
 
 macro_rules! schedule_for {
     ($scope:expr, $f:expr, $freq:expr, $timeout:expr) => {{
@@ -70,17 +64,15 @@ impl TestingContext {
 }
 
 impl Context for TestingContext {
-    fn on_frame<'a>(&mut self, frame: ImageRaw<'a, BinaryColor>) {
-        frame.pixel_iter().for_each(|px| {
-            let (x, y) = (px.0.x as usize, px.0.y as usize);
-            self.0[y].replace_range(
-                x..x + 1,
-                match px.1 {
-                    BinaryColor::On => "#",
-                    BinaryColor::Off => ".",
-                },
-            );
-        });
+    fn on_frame(&mut self, frame: FrameView<'_>) {
+        frame
+            .iter_rows_as_bitslices()
+            .zip(self.0.iter_mut())
+            .for_each(|(frame_row, ctx_row)| {
+                frame_row.iter().enumerate().for_each(|(n, &frame_px)| {
+                    ctx_row.replace_range(n..n + 1, if frame_px { "#" } else { "." });
+                });
+            });
     }
 
     fn sound_on(&mut self) {}

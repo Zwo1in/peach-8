@@ -55,7 +55,7 @@
 
 #![no_std]
 pub mod context;
-pub(crate) mod gfx;
+pub mod frame;
 pub mod opcode;
 pub mod peach;
 pub(crate) mod timer;

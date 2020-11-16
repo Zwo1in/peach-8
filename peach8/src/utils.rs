@@ -5,7 +5,7 @@ pub mod testing {
 
     use embedded_graphics::{drawable::Pixel, pixelcolor::BinaryColor};
 
-    use crate::gfx::{Gfx, HEIGHT, WIDTH};
+    use crate::frame::{FrameView, HEIGHT, WIDTH};
 
     #[macro_export]
     macro_rules! assert_eq_2d {
@@ -113,10 +113,10 @@ pub mod testing {
         }
     }
 
-    impl ToMask for Gfx {
+    impl<'a> ToMask for FrameView<'a> {
         fn to_mask(&self) -> ImageMask {
             let mut mask = ImageMask::new();
-            self.iter_rows_bitwise()
+            self.iter_rows_as_bitslices()
                 .zip(mask.0.iter_mut())
                 .for_each(|(g_row, m_row)| m_row.iter_mut().zip(g_row).for_each(|(m, &g)| *m = g));
             mask

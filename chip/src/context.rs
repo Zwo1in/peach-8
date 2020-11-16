@@ -9,9 +9,9 @@ use peach8::{
     embedded_graphics::{
         drawable::{Drawable, Pixel},
         geometry::Point,
-        image::{ImageRaw, IntoPixelIter},
         pixelcolor::BinaryColor,
     },
+    frame::FrameView,
     Context,
 };
 
@@ -57,22 +57,24 @@ where
     U: CountDown + Periodic,
 {
     /// map image from 64x32 to 128x64
-    fn on_frame(&mut self, frame: ImageRaw<'_, BinaryColor>) {
+    fn on_frame(&mut self, frame: FrameView<'_>) {
         if self.frame_timer.wait().is_ok() {
             frame
-                .pixel_iter()
-                .flat_map(|Pixel(point, color)| {
-                    (0..4).map(move |n| {
-                        Pixel(
-                            Point {
-                                x: 2 * point.x + n % 2,
-                                y: 2 * point.y + n / 2,
+                .iter_pixelwise_scaled(2)
+                .enumerate()
+                .for_each(|(y, row_iter)| {
+                    row_iter.enumerate().for_each(|(x, &is_on)| {
+                        let p = Pixel(
+                            Point::new(x as i32, y as i32),
+                            if is_on {
+                                BinaryColor::On
+                            } else {
+                                BinaryColor::Off
                             },
-                            color,
-                        )
-                    })
-                })
-                .for_each(|p| p.draw(&mut self.display).unwrap());
+                        );
+                        p.draw(&mut self.display).unwrap();
+                    });
+                });
             self.display.flush().unwrap();
         }
     }
