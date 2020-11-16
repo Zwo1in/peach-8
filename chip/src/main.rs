@@ -49,8 +49,13 @@ fn main() -> ! {
     let mut flash = dp.FLASH.constrain();
     let mut rcc = dp.RCC.constrain();
 
-    let sysclk_freq = 36.mhz();
-    let clocks = freeze_clocks(sysclk_freq, rcc.cfgr, &mut flash);
+    let clocks = rcc.cfgr
+        .use_hse(8.mhz())
+        .sysclk(48.mhz())
+        .pclk1(24.mhz())
+        .freeze(&mut flash.acr);
+    //let sysclk_freq = 48.mhz();
+    //let clocks = freeze_clocks(sysclk_freq, rcc.cfgr, &mut flash);
 
     let mut gpiob = dp.GPIOB.split(&mut rcc.ahb);
     let mut gpiod = dp.GPIOD.split(&mut rcc.ahb);
@@ -103,7 +108,7 @@ fn main() -> ! {
     let mut tim2 = Timer::tim2(dp.TIM2, tim2_freq.hz(), clocks, &mut rcc.apb1);
     tim2.start(tim2_freq.hz());
 
-    let tim4_freq = 30;
+    let tim4_freq = 25;
     let mut tim4 = Timer::tim4(dp.TIM4, tim4_freq.hz(), clocks, &mut rcc.apb1);
     tim4.start(tim4_freq.hz());
 
@@ -113,14 +118,14 @@ fn main() -> ! {
     let mut peach8 = Peach8::load(ctx, &rom[..]);
 
     loop {
-        if tim1.wait().is_ok() {
-            //info!("Tick timers!");
-            peach8.tick_timers();
-        }
-
         if tim2.wait().is_ok() {
             //info!("Tick cheap!");
             peach8.tick_chip().expect("Peach8 crashed");
+        }
+
+        if tim1.wait().is_ok() {
+            //info!("Tick timers!");
+            peach8.tick_timers();
         }
     }
 }
