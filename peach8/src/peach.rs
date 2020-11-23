@@ -65,7 +65,7 @@ pub struct Peach8<C: Context + Sized> {
 }
 
 impl<C: Context + Sized> Peach8<C> {
-    fn new(ctx: C) -> Self {
+    pub(crate) fn new(ctx: C) -> Self {
         Self {
             ctx,
             v: [0; 16],
@@ -81,7 +81,7 @@ impl<C: Context + Sized> Peach8<C> {
     }
 
     /// Load program from slice of bytes to memory from 0x200 (_start address)
-    pub fn load(ctx: C, prog: &[u8]) -> Self {
+    pub(crate) fn load(&mut self, prog: &[u8]) {
         let fontset: &[u8] = &[
             0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
             0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -100,16 +100,14 @@ impl<C: Context + Sized> Peach8<C> {
             0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
             0xF0, 0x80, 0xF0, 0x80, 0x80, // F
         ];
-        let mut chip = Self::new(ctx);
-        chip.memory[FONTSET_ADDR as usize..]
+        self.memory[FONTSET_ADDR as usize..]
             .iter_mut()
             .zip(fontset)
             .for_each(|(mem, &data)| *mem = data);
-        chip.memory[START_ADDR as usize..]
+        self.memory[START_ADDR as usize..]
             .iter_mut()
             .zip(prog)
             .for_each(|(mem, &data)| *mem = data);
-        chip
     }
 
     fn pc_increment(&mut self) -> Result<(), &'static str> {
@@ -271,7 +269,8 @@ mod tests {
 
     #[test]
     fn read_opcode() -> Result<(), &'static str> {
-        let mut chip = Peach8::load(TestingContext::new(0), &[0x14u8, 0x65u8]);
+        let mut chip = Peach8::new(TestingContext::new(0));
+        chip.load(&[0x14u8, 0x65u8]);
         let opcode = chip.read_opcode()?;
         assert_eq!(opcode, OpCode::_1NNN { nnn: 0x465u16 },);
 
@@ -801,7 +800,8 @@ mod opcodes_execution_tests {
     /// Clear the screen
     #[test]
     fn execute_00e0_clear_screen() -> Result<(), &'static str> {
-        let mut chip = Peach8::load(TestingContext::new(0), &[]);
+        let mut chip = Peach8::new(TestingContext::new(0));
+        chip.load(&[]);
         let opcode = OpCode::_00E0;
         let empty_mask_str = include_str!("../test-data/context/empty_mask");
 
@@ -1243,7 +1243,8 @@ mod opcodes_execution_tests {
     #[rustfmt::skip]
     #[test]
     fn execute_dxyn_draw_n_at_vx_vy() -> Result<(), &'static str> {
-        let mut chip = Peach8::load(TestingContext::new(0), &[]);
+        let mut chip = Peach8::new(TestingContext::new(0));
+        chip.load(&[]);
         let opcode = OpCode::_DXYN { x: 0, y: 1, n: 5 };
 
         chip.assign_vx_nn(0, 0x02)?;

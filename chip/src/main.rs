@@ -30,7 +30,7 @@ use stm32f303::{
 use log::{debug, error, info, trace, warn};
 use peripherals::{freeze_clocks, /*logger::*,*/ ppu, spu};
 
-use peach8::Peach8;
+use peach8::Builder;
 
 mod context;
 use context::DiscoveryContext;
@@ -115,17 +115,21 @@ fn main() -> ! {
     //info!("setting up peach8");
     let rom = include_bytes!("../../roms/PONG");
     let ctx = DiscoveryContext::new(spi_display, keeb, &mut pwm_channel, tim4);
-    let mut peach8 = Peach8::load(ctx, &rom[..]);
+    let mut chip = Builder::new()
+        .with_context(ctx)
+        .with_program(rom)
+        .build()
+        .unwrap();
 
     loop {
         if tim2.wait().is_ok() {
             //info!("Tick cheap!");
-            peach8.tick_chip().expect("Peach8 crashed");
+            chip.tick_chip().expect("Peach8 crashed");
         }
 
         if tim1.wait().is_ok() {
             //info!("Tick timers!");
-            peach8.tick_timers();
+            chip.tick_timers();
         }
     }
 }

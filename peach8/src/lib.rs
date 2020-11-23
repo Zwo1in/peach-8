@@ -54,6 +54,7 @@
 //! coming soon...
 
 #![no_std]
+pub mod builder;
 pub mod context;
 pub mod frame;
 pub mod opcode;
@@ -61,6 +62,9 @@ pub mod peach;
 pub(crate) mod timer;
 pub(crate) mod utils;
 
+pub use builder::Builder;
 pub use context::Context;
+#[cfg(feature = "embedded-graphics")]
 pub use embedded_graphics;
+pub use frame::{Frame, FrameView};
 pub use peach::Peach8;

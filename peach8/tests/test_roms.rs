@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam_utils::thread;
 
-use peach8::{frame::FrameView, Context, Peach8};
+use peach8::{Builder, Context, FrameView};
 
 macro_rules! schedule_for {
     ($scope:expr, $f:expr, $freq:expr, $timeout:expr) => {{
@@ -119,7 +119,12 @@ fn rom_skosulor_c8int() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let rom = include_bytes!("../test-data/skosulor_c8int/test.c8");
-    let chip = Arc::new(Mutex::new(Peach8::load(TestingContext::new(), &rom[..])));
+    let chip = Builder::new()
+        .with_context(TestingContext::new())
+        .with_program(rom)
+        .build()
+        .unwrap();
+    let chip = Arc::new(Mutex::new(chip));
     let chip_timers = Arc::clone(&chip);
     let chip_test = Arc::clone(&chip);
     thread::scope(|s| {
@@ -148,7 +153,12 @@ fn rom_corax89_chip8_test_rom() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let rom = include_bytes!("../test-data/corax89_chip8-test-rom/test_opcode.ch8");
-    let chip = Arc::new(Mutex::new(Peach8::load(TestingContext::new(), &rom[..])));
+    let chip = Builder::new()
+        .with_context(TestingContext::new())
+        .with_program(rom)
+        .build()
+        .unwrap();
+    let chip = Arc::new(Mutex::new(chip));
     let chip_timers = Arc::clone(&chip);
     let chip_test = Arc::clone(&chip);
     thread::scope(|s| {
