@@ -1,12 +1,12 @@
 use crate::context::Context;
 use crate::peach::Peach8;
 
-pub struct Builder<'a, C: Context> {
+pub struct Builder<'a, C: Context + Sized> {
     context: Option<C>,
     program: Option<&'a [u8]>,
 }
 
-impl<'a, C: Context> Builder<'a, C> {
+impl<'a, C: Context + Sized> Builder<'a, C> {
     pub fn new() -> Self {
         Self {
             context: None,

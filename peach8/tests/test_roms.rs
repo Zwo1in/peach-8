@@ -166,13 +166,13 @@ fn rom_corax89_chip8_test_rom() {
             s,
             || chip.lock().unwrap().tick_chip().unwrap(),
             500,
-            Duration::from_millis(500)
+            Duration::from_millis(700)
         );
         schedule_for!(
             s,
             || chip_timers.lock().unwrap().tick_timers(),
             60,
-            Duration::from_millis(500)
+            Duration::from_millis(700)
         );
     })
     .unwrap();

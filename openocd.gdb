@@ -7,5 +7,6 @@ monitor itm port 0 on
 load
 break DefaultHandler
 break UserHardFault
+break HardFault
 break main
 continue
